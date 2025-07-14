@@ -1,0 +1,47 @@
+{
+  "name": "otakupulse-discord-bot",
+  "version": "1.0.0",
+  "description": "OtakuPulse - Your All-In-One Anime Hub for Discord",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "anime",
+    "quotes",
+    "airing",
+    "trailers",
+    "jikan",
+    "myanimelist"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.1",
+    "axios": "^1.6.2",
+    "discord.js": "^14.14.1",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "node-cron": "^3.0.3",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "your-repository-url"
+  },
+  "bugs": {
+    "url": "your-repository-url/issues"
+  },
+  "homepage": "your-repository-url#readme"
+}
