@@ -444,37 +444,12 @@ async function handleQuote(interaction) {
         await interaction.editReply('Could not fetch anime quote at this time. Please try again later.');
         return;
     }
+    
     // Professional embed styling
     const embed = new EmbedBuilder()
         .setColor('#7f00ff')
         .setTitle('🎌 Anime Quote')
-        .setDescription(`> "${quote.content}"`)
-        .addFields(
-            { name: 'Character', value: `🎭 ${quote.character?.name || 'Unknown'}`, inline: true },
-            { name: 'Anime', value: `📺 ${quote.anime?.name || 'Unknown'}`, inline: true }
-        )
-        .setFooter({ text: 'Powered by AnimeChan • OtakuPulse', iconURL: 'https://animechan.vercel.app/assets/logo.png' })
-        .setTimestamp()
-        .setThumbnail('https://animechan.vercel.app/assets/logo.png')
-        .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
-    await interaction.editReply({ embeds: [embed] });
-}
-
-async function handleQuote(interaction) {
-    const anime = interaction.options.getString('anime');
-    const quote = await AnimeAPI.getAnimeQuote(anime);
-    if (!quote) {
-        await interaction.editReply('Could not fetch anime quote at this time. Please try again later.');
-        return;
-    }
-    // Professional embed styling
-const { EmbedBuilder } = require('discord.js');
-
-async function handleQuote(interaction, quote) {
-    const embed = new EmbedBuilder()
-        .setColor('#7f00ff')
-        .setTitle('🎌 Anime Quote')
-        .setDescription(`> "${quote.content}"`)
+        .setDescription(`> "${quote.quote || quote.content}"`)
         .addFields(
             { name: 'Character', value: `🎭 ${quote.character || 'Unknown'}`, inline: true },
             { name: 'Anime', value: `📺 ${quote.anime || 'Unknown'}`, inline: true }
@@ -483,10 +458,11 @@ async function handleQuote(interaction, quote) {
         .setTimestamp()
         .setThumbnail('https://animechan.vercel.app/assets/logo.png')
         .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
+    
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleAiring(interaction, AnimeAPI) {
+async function handleAiring(interaction) {
     const airingAnime = await AnimeAPI.getCurrentlyAiring();
     
     if (airingAnime.length === 0) {
