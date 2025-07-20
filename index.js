@@ -448,10 +448,10 @@ async function handleQuote(interaction) {
     const embed = new EmbedBuilder()
         .setColor('#7f00ff')
         .setTitle('🎌 Anime Quote')
-        .setDescription(`> "${quote.content}"`)
+        .setDescription(`> "${quote.quote || quote.content}"`)
         .addFields(
-            { name: 'Character', value: `🎭 ${quote.character?.name || 'Unknown'}`, inline: true },
-            { name: 'Anime', value: `📺 ${quote.anime?.name || 'Unknown'}`, inline: true }
+            { name: 'Character', value: `🎭 ${quote.character || 'Unknown'}`, inline: true },
+            { name: 'Anime', value: `📺 ${quote.anime || 'Unknown'}`, inline: true }
         )
         .setFooter({ text: 'Powered by AnimeChan • OtakuPulse', iconURL: 'https://animechan.vercel.app/assets/logo.png' })
         .setTimestamp()
