@@ -444,21 +444,19 @@ async function handleQuote(interaction) {
         await interaction.editReply('Could not fetch anime quote at this time. Please try again later.');
         return;
     }
-    
     // Professional embed styling
     const embed = new EmbedBuilder()
         .setColor('#7f00ff')
         .setTitle('🎌 Anime Quote')
-        .setDescription(`> "${quote.quote || quote.content}"`)
+        .setDescription(`> "${quote.content}"`)
         .addFields(
-            { name: 'Character', value: `🎭 ${quote.character || 'Unknown'}`, inline: true },
-            { name: 'Anime', value: `📺 ${quote.anime || 'Unknown'}`, inline: true }
+            { name: 'Character', value: `🎭 ${quote.character?.name || 'Unknown'}`, inline: true },
+            { name: 'Anime', value: `📺 ${quote.anime?.name || 'Unknown'}`, inline: true }
         )
         .setFooter({ text: 'Powered by AnimeChan • OtakuPulse', iconURL: 'https://animechan.vercel.app/assets/logo.png' })
         .setTimestamp()
         .setThumbnail('https://animechan.vercel.app/assets/logo.png')
         .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
-    
     await interaction.editReply({ embeds: [embed] });
 }
 
@@ -678,21 +676,7 @@ function startScheduledTasks() {
                 console.error('Invalid quote data:', quote);
                 return;
             }
-            // Create embed for the quote
-            const embed = new EmbedBuilder()
-                .setColor('#7f00ff')
-                .setTitle('✨ Anime Quote ✨')
-                .setDescription(`_"${quote.quote}"_`)
-                .addFields(
-                    { name: '📺 Anime', value: quote.anime || 'Unknown', inline: true },
-                    { name: '🎭 Character', value: quote.character || 'Unknown', inline: true }
-                )
-                .setFooter({ text: 'Powered by AnimeChan API', iconURL: 'https://animechan.vercel.app/assets/logo.png' })
-                .setTimestamp()
-                .setThumbnail('https://animechan.vercel.app/assets/logo.png')
-                .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
-                .setImage('https://cdn.wallpapersafari.com/84/3/6Q0Q0Q.jpg')
-                .setURL('https://animechan.vercel.app/');
+           
             // Send to all configured servers using Neon DB
             const botGuilds = Array.from(client.guilds.cache.values());
             for (const guild of botGuilds) {
