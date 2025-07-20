@@ -486,7 +486,7 @@ async function handleAiring(interaction) {
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleTopAnime(interaction, AnimeAPI) {
+async function handleTopAnime(interaction) {
     const topAnime = await AnimeAPI.getTopAnime();
 
     if (topAnime.length === 0) {
@@ -512,7 +512,7 @@ async function handleTopAnime(interaction, AnimeAPI) {
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleSearch(interaction, AnimeAPI) {
+async function handleSearch(interaction) {
     const query = interaction.options.getString('query');
     const searchResults = await AnimeAPI.searchAnime(query);
 
@@ -537,7 +537,7 @@ async function handleSearch(interaction, AnimeAPI) {
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleTrailer(interaction, AnimeAPI) {
+async function handleTrailer(interaction) {
     const animeName = interaction.options.getString('anime');
     const searchResults = await AnimeAPI.searchAnime(animeName);
 
@@ -568,14 +568,6 @@ async function handleTrailer(interaction, AnimeAPI) {
         .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
     await interaction.editReply({ embeds: [embed] });
 }
-
-module.exports = {
-    handleQuote,
-    handleAiring,
-    handleTopAnime,
-    handleSearch,
-    handleTrailer
-};
 
 async function handleSettings(interaction) {
     const guildId = interaction.guildId;
