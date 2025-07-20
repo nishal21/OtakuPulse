@@ -55,13 +55,13 @@ async function getAllGuildSettings() {
 // ...existing code...
 
 // API Configuration
-const JIKAN_API_BASE = 'https://api.jikan.moe/v4';
+const ANILIST_API = 'https://graphql.anilist.co';
 const ANIMECHAN_API_BASE = 'https://animechan.vercel.app/api';
 const QUOTES_API_BASE = 'https://api.api-ninjas.com/v1/quotes';
 
 // Rate limiting for API calls
 const rateLimiter = {
-    jikan: { lastCall: 0, delay: 1000 }, // 1 second delay for Jikan API
+    anilist: { lastCall: 0, delay: 667 }, // 90 requests per minute = 667ms delay
     animechan: { lastCall: 0, delay: 500 }, // 0.5 second delay for Animechan
     quotes: { lastCall: 0, delay: 100 } // 0.1 second delay for Quotes API
 };
@@ -78,70 +78,141 @@ async function rateLimit(api) {
     rateLimiter[api].lastCall = Date.now();
 }
 
+// GraphQL query helper
+async function queryAniList(query, variables = {}) {
+    try {
+        await rateLimit('anilist');
+        const response = await axios.post(ANILIST_API, {
+            query,
+            variables
+        }, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+            }
+        });
+        return response.data.data;
+    } catch (error) {
+        console.error('❌ AniList API Error:', error.response?.data || error.message);
+        return null;
+    }
+}
+
 // API Helper Functions
 class AnimeAPI {
     // Get currently airing anime
     static async getCurrentlyAiring() {
-        try {
-            await rateLimit('jikan');
-            const response = await axios.get(`${JIKAN_API_BASE}/seasons/now`, {
-                timeout: 10000
-            });
-            return response.data.data.slice(0, 10); // Return top 10
-        } catch (error) {
-            console.error('Error fetching currently airing anime:', error.message);
-            return [];
-        }
+        const query = `
+            query ($perPage: Int) {
+                Page(perPage: $perPage) {
+                    media(type: ANIME, status: RELEASING, sort: TRENDING_DESC) {
+                        id
+                        title { romaji }
+                        nextAiringEpisode {
+                            airingAt
+                            episode
+                        }
+                        coverImage { large }
+                        averageScore
+                        episodes
+                        status
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(query, { perPage: 10 });
+        return data?.Page?.media || [];
     }
 
     // Get anime by ID
     static async getAnimeById(id) {
-        try {
-            await rateLimit('jikan');
-            const response = await axios.get(`${JIKAN_API_BASE}/anime/${id}`);
-            return response.data.data;
-        } catch (error) {
-            console.error(`Error fetching anime ${id}:`, error.message);
-            return null;
-        }
+        const query = `
+            query ($id: Int) {
+                Media(id: $id, type: ANIME) {
+                    id
+                    title { romaji }
+                    description(asHtml: false)
+                    episodes
+                    averageScore
+                    coverImage { large }
+                    trailer {
+                        id
+                        site
+                        thumbnail
+                    }
+                    status
+                    format
+                    genres
+                    studios {
+                        nodes {
+                            name
+                        }
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(query, { id });
+        return data?.Media || null;
     }
 
     // Get anime videos/trailers
     static async getAnimeVideos(id) {
-        try {
-            await rateLimit('jikan');
-            const response = await axios.get(`${JIKAN_API_BASE}/anime/${id}/videos`);
-            return response.data.data;
-        } catch (error) {
-            console.error(`Error fetching anime videos for ${id}:`, error.message);
-            return null;
-        }
+        const anime = await this.getAnimeById(id);
+        if (!anime?.trailer) return null;
+        
+        return {
+            promo: [{
+                title: `${anime.title.romaji} Trailer`,
+                trailer: {
+                    url: anime.trailer.site === 'youtube' 
+                        ? `https://www.youtube.com/watch?v=${anime.trailer.id}`
+                        : null,
+                    thumbnail: anime.trailer.thumbnail
+                }
+            }]
+        };
     }
 
     // Get top anime
     static async getTopAnime() {
-        try {
-            await rateLimit('jikan');
-            const response = await axios.get(`${JIKAN_API_BASE}/top/anime`);
-            return response.data.data.slice(0, 5);
-        } catch (error) {
-            console.error('Error fetching top anime:', error.message);
-            return [];
-        }
+        const query = `
+            query ($perPage: Int) {
+                Page(perPage: $perPage) {
+                    media(type: ANIME, sort: POPULARITY_DESC) {
+                        id
+                        title { romaji }
+                        episodes
+                        coverImage { large }
+                        averageScore
+                        format
+                        status
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(query, { perPage: 5 });
+        return data?.Page?.media || [];
     }
 
     // Search anime
     static async searchAnime(query) {
-        try {
-            await rateLimit('jikan');
-            const response = await axios.get(`${JIKAN_API_BASE}/anime`, {
-                params: { q: query, limit: 5 }
-            });
-            return response.data.data;
-        } catch (error) {
-            console.error(`Error searching anime "${query}":`, error.message);
-            return [];
-        }
+        const queryGraphQL = `
+            query ($search: String, $perPage: Int) {
+                Page(perPage: $perPage) {
+                    media(search: $search, type: ANIME) {
+                        id
+                        title { romaji }
+                        coverImage { large }
+                        description(asHtml: false)
+                        episodes
+                        averageScore
+                        status
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(queryGraphQL, { search: query, perPage: 5 });
+        return data?.Page?.media || [];
     }
 
     // Get anime quotes
@@ -153,15 +224,14 @@ class AnimeAPI {
                 url = `https://api.animechan.io/v1/quotes/random?anime=${encodeURIComponent(anime)}`;
                 try {
                     const response = await axios.get(url);
-                    // The endpoint returns a single Quote object
-                    if (response.data && response.data.content) {
+                    if (response.data && response.data.quote) {
                         return response.data;
                     } else {
                         console.warn(`No quote found for anime: ${anime}. Falling back to random quote.`);
                         url = 'https://api.animechan.io/v1/quotes/random';
                         const randomResponse = await axios.get(url);
-                        if (randomResponse.data.status === 'success') {
-                            return randomResponse.data.data;
+                        if (randomResponse.data && randomResponse.data.quote) {
+                            return randomResponse.data;
                         } else {
                             return null;
                         }
@@ -174,8 +244,8 @@ class AnimeAPI {
                     }
                     url = 'https://api.animechan.io/v1/quotes/random';
                     const randomResponse = await axios.get(url);
-                    if (randomResponse.data.status === 'success') {
-                        return randomResponse.data.data;
+                    if (randomResponse.data && randomResponse.data.quote) {
+                        return randomResponse.data;
                     } else {
                         return null;
                     }
@@ -183,8 +253,8 @@ class AnimeAPI {
             } else {
                 url = 'https://api.animechan.io/v1/quotes/random';
                 const response = await axios.get(url);
-                if (response.data.status === 'success') {
-                    return response.data.data;
+                if (response.data && response.data.quote) {
+                    return response.data;
                 } else {
                     return null;
                 }
