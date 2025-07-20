@@ -459,7 +459,7 @@ async function handleAnimeQuote(interaction) {
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleQuote(interaction) {
+synca function handleQuote(interaction) {
     const anime = interaction.options.getString('anime');
     const quote = await AnimeAPI.getAnimeQuote(anime);
     if (!quote) {
@@ -467,13 +467,16 @@ async function handleQuote(interaction) {
         return;
     }
     // Professional embed styling
+const { EmbedBuilder } = require('discord.js');
+
+async function handleQuote(interaction, quote) {
     const embed = new EmbedBuilder()
         .setColor('#7f00ff')
         .setTitle('🎌 Anime Quote')
         .setDescription(`> "${quote.content}"`)
         .addFields(
-            { name: 'Character', value: `🎭 ${quote.character?.name || 'Unknown'}`, inline: true },
-            { name: 'Anime', value: `📺 ${quote.anime?.name || 'Unknown'}`, inline: true }
+            { name: 'Character', value: `🎭 ${quote.character || 'Unknown'}`, inline: true },
+            { name: 'Anime', value: `📺 ${quote.anime || 'Unknown'}`, inline: true }
         )
         .setFooter({ text: 'Powered by AnimeChan • OtakuPulse', iconURL: 'https://animechan.vercel.app/assets/logo.png' })
         .setTimestamp()
@@ -482,114 +485,122 @@ async function handleQuote(interaction) {
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleAiring(interaction) {
+async function handleAiring(interaction, AnimeAPI) {
     const airingAnime = await AnimeAPI.getCurrentlyAiring();
     
     if (airingAnime.length === 0) {
         await interaction.editReply('Could not fetch currently airing anime. Please try again later.');
         return;
     }
-    
+
     const embed = new EmbedBuilder()
         .setColor('#FFD93D')
         .setTitle('📺 Currently Airing Anime')
         .setDescription('Here are the top currently airing anime:')
-        .setFooter({ text: 'OtakuPulse • Jikan API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
+        .setFooter({ text: 'OtakuPulse • AniList API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
         .setTimestamp()
         .setThumbnail('https://cdn-icons-png.flaticon.com/512/906/906175.png')
         .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
     airingAnime.slice(0, 5).forEach((anime, index) => {
         embed.addFields({
-            name: `#${index + 1} • ${anime.title}`,
-            value: `⭐ **Score:** ${anime.score || 'N/A'}\n📺 **Episodes:** ${anime.episodes || 'Ongoing'}\n🟢 **Status:** ${anime.status}`,
+            name: `#${index + 1} • ${anime.title.romaji}`,
+            value: `⭐ **Score:** ${anime.averageScore || 'N/A'}\n📺 **Episodes:** ${anime.episodes || 'Ongoing'}\n🟢 **Status:** ${anime.status || 'N/A'}`,
             inline: true
         });
     });
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleTopAnime(interaction) {
+async function handleTopAnime(interaction, AnimeAPI) {
     const topAnime = await AnimeAPI.getTopAnime();
-    
+
     if (topAnime.length === 0) {
         await interaction.editReply('Could not fetch top anime. Please try again later.');
         return;
     }
-    
+
     const embed = new EmbedBuilder()
         .setColor('#6C5CE7')
         .setTitle('🏆 Top Anime')
         .setDescription('Here are the top-rated anime:')
-        .setFooter({ text: 'OtakuPulse • Jikan API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
+        .setFooter({ text: 'OtakuPulse • AniList API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
         .setTimestamp()
-        .setThumbnail('https://cdn-icons-png.flaticon.com/512/906/906175.png')
+        .setThumbnail(topAnime[0]?.coverImage?.large)
         .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
     topAnime.forEach((anime, index) => {
         embed.addFields({
-            name: `#${index + 1} • ${anime.title}`,
-            value: `⭐ **Score:** ${anime.score}\n🏅 **Rank:** #${anime.rank}\n📺 **Episodes:** ${anime.episodes || 'N/A'}`,
+            name: `#${index + 1} • ${anime.title.romaji}`,
+            value: `⭐ **Score:** ${anime.averageScore || 'N/A'}\n📺 **Episodes:** ${anime.episodes || 'N/A'}\n📡 **Status:** ${anime.status || 'N/A'}`,
             inline: true
         });
     });
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleSearch(interaction) {
+async function handleSearch(interaction, AnimeAPI) {
     const query = interaction.options.getString('query');
     const searchResults = await AnimeAPI.searchAnime(query);
-    
+
     if (searchResults.length === 0) {
         await interaction.editReply(`No anime found for "${query}".`);
         return;
     }
-    
+
     const embed = new EmbedBuilder()
         .setTitle(`🔍 Search Results for "${query}"`)
         .setColor('#A29BFE')
         .setTimestamp();
-    
+
     searchResults.slice(0, 5).forEach((anime, index) => {
         embed.addFields({
-            name: `${index + 1}. ${anime.title}`,
-            value: `**Score:** ${anime.score || 'N/A'}\n**Episodes:** ${anime.episodes || 'N/A'}\n**Status:** ${anime.status}`,
+            name: `${index + 1}. ${anime.title.romaji}`,
+            value: `**Score:** ${anime.averageScore || 'N/A'}\n**Episodes:** ${anime.episodes || 'N/A'}\n**Status:** ${anime.status || 'N/A'}`,
             inline: true
         });
     });
-    
+
     await interaction.editReply({ embeds: [embed] });
 }
 
-async function handleTrailer(interaction) {
+async function handleTrailer(interaction, AnimeAPI) {
     const animeName = interaction.options.getString('anime');
     const searchResults = await AnimeAPI.searchAnime(animeName);
-    
+
     if (searchResults.length === 0) {
         await interaction.editReply(`No anime found for "${animeName}".`);
         return;
     }
-    
+
     const anime = searchResults[0];
-    const videos = await AnimeAPI.getAnimeVideos(anime.mal_id);
-    
+    const videos = await AnimeAPI.getAnimeVideos(anime.id);
+
     if (!videos || !videos.promo || videos.promo.length === 0) {
-        await interaction.editReply(`No trailers found for "${anime.title}".`);
+        await interaction.editReply(`No trailers found for "${anime.title.romaji}".`);
         return;
     }
-    
+
     const trailer = videos.promo[0];
-    
+
     const embed = new EmbedBuilder()
         .setColor('#FF7675')
-        .setTitle(`🎬 ${anime.title} - Trailer`)
+        .setTitle(`🎬 ${anime.title.romaji} - Trailer`)
         .setDescription(`**${trailer.title}**`)
         .setURL(trailer.trailer.url)
-        .setImage(trailer.trailer.images.large_image_url)
-        .setFooter({ text: 'OtakuPulse • Jikan API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
+        .setImage(trailer.trailer.thumbnail)
+        .setFooter({ text: 'OtakuPulse • AniList API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
         .setTimestamp()
         .setThumbnail('https://cdn-icons-png.flaticon.com/512/906/906175.png')
         .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
     await interaction.editReply({ embeds: [embed] });
 }
+
+module.exports = {
+    handleQuote,
+    handleAiring,
+    handleTopAnime,
+    handleSearch,
+    handleTrailer
+};
 
 async function handleSettings(interaction) {
     const guildId = interaction.guildId;
