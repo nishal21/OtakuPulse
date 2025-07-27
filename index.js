@@ -221,45 +221,31 @@ class AnimeAPI {
             await rateLimit('animechan');
             let url;
             if (anime) {
-                url = `https://api.animechan.io/v1/quotes/random?anime=${encodeURIComponent(anime)}`;
+                url = `${ANIMECHAN_API_BASE}/quotes/anime?title=${encodeURIComponent(anime)}`;
                 try {
                     const response = await axios.get(url);
-                    if (response.data && response.data.status === 'success' && response.data.data) {
-                        // New API format: response.data.data contains the quote
-                        const quoteData = response.data.data;
-                        return {
-                            quote: quoteData.content,
-                            anime: quoteData.anime.name,
-                            character: quoteData.character.name
-                        };
+                    if (response.data && Array.isArray(response.data) && response.data.length > 0) {
+                        // Return random quote from the array
+                        const randomIndex = Math.floor(Math.random() * response.data.length);
+                        return response.data[randomIndex];
                     } else {
                         console.warn(`No quote found for anime: ${anime}. Falling back to random quote.`);
-                        // Try random quote
-                        url = 'https://api.animechan.io/v1/quotes/random';
+                        url = `${ANIMECHAN_API_BASE}/random`;
                         const randomResponse = await axios.get(url);
-                        if (randomResponse.data && randomResponse.data.status === 'success' && randomResponse.data.data) {
-                            const quoteData = randomResponse.data.data;
-                            return {
-                                quote: quoteData.content,
-                                anime: quoteData.anime.name,
-                                character: quoteData.character.name
-                            };
+                        if (randomResponse.data && randomResponse.data.quote) {
+                            return randomResponse.data;
+                        } else {
+                            return null;
                         }
-                        return null;
                     }
                 } catch (err) {
                     console.error(`Error fetching quote for anime: ${anime}:`, err.message);
                     // Fallback to random quote
-                    url = 'https://api.animechan.io/v1/quotes/random';
+                    url = `${ANIMECHAN_API_BASE}/random`;
                     try {
                         const randomResponse = await axios.get(url);
-                        if (randomResponse.data && randomResponse.data.status === 'success' && randomResponse.data.data) {
-                            const quoteData = randomResponse.data.data;
-                            return {
-                                quote: quoteData.content,
-                                anime: quoteData.anime.name,
-                                character: quoteData.character.name
-                            };
+                        if (randomResponse.data && randomResponse.data.quote) {
+                            return randomResponse.data;
                         }
                     } catch (fallbackErr) {
                         console.error('Error fetching fallback random quote:', fallbackErr.message);
@@ -267,15 +253,10 @@ class AnimeAPI {
                     return null;
                 }
             } else {
-                url = 'https://api.animechan.io/v1/quotes/random';
+                url = `${ANIMECHAN_API_BASE}/random`;
                 const response = await axios.get(url);
-                if (response.data && response.data.status === 'success' && response.data.data) {
-                    const quoteData = response.data.data;
-                    return {
-                        quote: quoteData.content,
-                        anime: quoteData.anime.name,
-                        character: quoteData.character.name
-                    };
+                if (response.data && response.data.quote) {
+                    return response.data;
                 } else {
                     return null;
                 }
@@ -287,8 +268,8 @@ class AnimeAPI {
                 { quote: "To know sorrow is not terrifying. What is terrifying is to know you can't go back to happiness you could have.", anime: "Bleach", character: "Matsumoto Rangiku" },
                 { quote: "No one knows what the future holds. That's why its potential is infinite.", anime: "Steins;Gate", character: "Rintarou Okabe" },
                 { quote: "It's not the face that makes someone a monster; it's the choices they make with their lives.", anime: "Naruto", character: "Naruto Uzumaki" },
-                { quote: "People's lives don't end when they die. It ends when they lose faith.", anime: "Naruto", character: "Itachi Uchiha" },
-                { quote: "Hard work is absolutely necessary, but in the end, ability decides everything.", anime: "Naruto", character: "Madara Uchiha" }
+                { quote: "People's lives don't end when they die. It ends when they lose faith.", anime: "Itachi Uchiha", character: "Naruto" },
+                { quote: "Hard work is absolutely necessary, but in the end, ability decides everything.", anime: "Madara Uchiha", character: "Naruto" }
             ];
             return fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
         }
@@ -671,13 +652,12 @@ function startScheduledTasks() {
             } else {
                 // Fetch quote from animechan API
                 try {
-                    const response = await axios.get('https://api.animechan.io/v1/quotes/random');
-                    if (response.data && response.data.status === 'success' && response.data.data) {
-                        const quoteData = response.data.data;
+                    const response = await axios.get('https://animechan.vercel.app/api/random');
+                    if (response.data && response.data.quote) {
                         quote = {
-                            quote: quoteData.content,
-                            anime: quoteData.anime.name,
-                            character: quoteData.character.name
+                            quote: response.data.quote,
+                            anime: response.data.anime,
+                            character: response.data.character
                         };
                         startScheduledTasks.lastQuote = quote;
                         startScheduledTasks.lastTimestamp = now;
@@ -1197,11 +1177,10 @@ app.get('/dashboard', async (req, res) => {
     <div class="grid-bg"></div>
     <div class="navbar">
         <div class="navbar-glass">
-            <span class="logo">OtakuPulse</span>
-<div class="nav-links">
-                <a href="/#features" class="nav-link">Features</a>
-                <a href="/#getting-started" class="nav-link">Getting Started</a>
-                <a href="/#commands" class="nav-link">Commands</a>
+            <span class="logo">OtakuPulse</span>            <div class="nav-links">
+                <a href="/features" class="nav-link">Features</a>
+                <a href="/getting-started" class="nav-link">Getting Started</a>
+                <a href="/commands" class="nav-link">Commands</a>
                 <a href="/logout" class="nav-link">Logout</a>
             </div>
         </div>
@@ -1298,6 +1277,1043 @@ app.get('/dashboard', async (req, res) => {
 app.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/');
+});
+
+// Features page
+app.get('/features', (req, res) => {
+    res.send(`
+    <html>
+      <head>
+        <title>Features - OtakuPulse Bot</title>
+        <link rel="icon" href="/1.ico" type="image/x-icon">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(120deg, #16211c 0%, #10151c 100%);
+            color: #e6e6e6;
+            min-height: 100vh;
+            overflow-x: hidden;
+          }
+          .grid-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, #1e2a22 0px, #1e2a22 1px, transparent 1px, transparent 40px),
+                        repeating-linear-gradient(90deg, #1e2a22 0px, #1e2a22 1px, transparent 1px, transparent 40px);
+          }
+          .navbar {
+            position: fixed;
+            top: 32px; left: 0; width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0 48px;
+            z-index: 2;
+          }
+          .navbar-glass {
+            background: rgba(30, 40, 36, 0.7);
+            border-radius: 32px;
+            box-shadow: 0 2px 24px #10151c44;
+            padding: 12px 32px;
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            backdrop-filter: blur(10px);
+          }
+          .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #e6e6e6;
+            letter-spacing: -1px;
+            text-decoration: none;
+          }
+          .nav-links {
+            display: flex;
+            gap: 24px;
+          }
+          .nav-link {
+            color: #b0b8c1;
+            font-size: 1rem;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+          }
+          .nav-link:hover, .nav-link.active {
+            color: #7fffd4;
+          }
+          .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 120px 32px 80px;
+            position: relative;
+            z-index: 1;
+          }
+          .page-header {
+            text-align: center;
+            margin-bottom: 80px;
+          }
+          .page-title {
+            font-size: 3.5rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 24px;
+            text-shadow: 0 2px 32px #7fffd444;
+          }
+          .page-subtitle {
+            font-size: 1.3rem;
+            color: #b0b8c1;
+            opacity: 0.85;
+          }
+          .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 32px;
+            margin-bottom: 80px;
+          }
+          .feature-card {
+            background: rgba(30, 40, 36, 0.85);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 2px 32px #10151c44;
+            border: 1px solid rgba(127, 255, 212, 0.3);
+            backdrop-filter: blur(2px);
+            transition: transform 0.3s, box-shadow 0.3s;
+          }
+          .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 40px #10151c66;
+          }
+          .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 24px;
+            display: block;
+          }
+          .feature-title {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #7fffd4;
+            margin-bottom: 16px;
+          }
+          .feature-description {
+            font-size: 1.1rem;
+            color: #e6e6e6;
+            line-height: 1.6;
+            opacity: 0.9;
+          }
+          .feature-benefits {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(127, 255, 212, 0.2);
+          }
+          .feature-benefits ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+          }
+          .feature-benefits li {
+            margin-bottom: 8px;
+            color: #b0b8c1;
+            font-size: 1rem;
+          }
+          .feature-benefits li::before {
+            content: "✨ ";
+            color: #7fffd4;
+            margin-right: 8px;
+          }
+          .cta-section {
+            text-align: center;
+            background: rgba(30, 40, 36, 0.85);
+            border-radius: 32px;
+            padding: 60px 40px;
+            border: 1px solid #7fffd4;
+            box-shadow: 0 2px 32px #10151c44;
+          }
+          .cta-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 16px;
+          }
+          .cta-text {
+            font-size: 1.2rem;
+            color: #b0b8c1;
+            margin-bottom: 32px;
+          }
+          .btn {
+            background: rgba(255,255,255,0.08);
+            color: #e6e6e6;
+            padding: 18px 38px;
+            border: 1px solid #7fffd4;
+            border-radius: 32px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 24px #7fffd433;
+            transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+            text-decoration: none;
+            display: inline-block;
+            backdrop-filter: blur(2px);
+            margin: 0 12px;
+          }
+          .btn:hover {
+            background: rgba(127,255,212,0.12);
+            color: #7fffd4;
+            box-shadow: 0 4px 32px #7fffd455;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="grid-bg"></div>
+        <div class="navbar">
+          <div class="navbar-glass">
+            <a href="/" class="logo">OtakuPulse</a>
+            <div class="nav-links">
+              <a href="/features" class="nav-link active">Features</a>
+              <a href="/getting-started" class="nav-link">Getting Started</a>
+              <a href="/commands" class="nav-link">Commands</a>
+              <a href="/oauth/login" class="nav-link">Sign In</a>
+            </div>
+          </div>
+        </div>
+        
+        <div class="container">
+          <div class="page-header">
+            <h1 class="page-title">🔥 Powerful Features</h1>
+            <p class="page-subtitle">Everything you need to bring your anime community together</p>
+          </div>
+          
+          <div class="features-grid">
+            <div class="feature-card">
+              <span class="feature-icon">📺</span>
+              <h3 class="feature-title">Real-time Anime Updates</h3>
+              <p class="feature-description">Stay updated with the latest anime releases and currently airing shows. Get instant notifications when new episodes are available.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Automatic episode notifications</li>
+                  <li>Currently airing anime tracking</li>
+                  <li>Customizable update frequency</li>
+                  <li>Multiple anime series monitoring</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">🎬</span>
+              <h3 class="feature-title">Latest Trailers & Promos</h3>
+              <p class="feature-description">Access the newest anime trailers, promotional videos, and teasers as soon as they're released.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Official trailer links</li>
+                  <li>High-quality video thumbnails</li>
+                  <li>Direct YouTube integration</li>
+                  <li>Instant trailer notifications</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">🎌</span>
+              <h3 class="feature-title">Daily Anime Quotes</h3>
+              <p class="feature-description">Inspire your community with beautiful anime quotes from beloved characters across hundreds of anime series.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Thousands of curated quotes</li>
+                  <li>Character and anime attribution</li>
+                  <li>Beautiful embed formatting</li>
+                  <li>Daily automated posting</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">🏆</span>
+              <h3 class="feature-title">Top Anime Rankings</h3>
+              <p class="feature-description">Discover the highest-rated anime series with weekly rankings based on popularity and user scores.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Weekly top anime updates</li>
+                  <li>Popularity-based rankings</li>
+                  <li>Detailed anime information</li>
+                  <li>Score and episode data</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">🔍</span>
+              <h3 class="feature-title">Comprehensive Search</h3>
+              <p class="feature-description">Find any anime instantly with our powerful search functionality powered by the AniList database.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Lightning-fast search results</li>
+                  <li>Detailed anime descriptions</li>
+                  <li>Rating and episode information</li>
+                  <li>Multiple search parameters</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">⚙️</span>
+              <h3 class="feature-title">Server Customization</h3>
+              <p class="feature-description">Tailor the bot's behavior to fit your server's needs with extensive customization options.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Channel-specific notifications</li>
+                  <li>Feature enable/disable toggles</li>
+                  <li>Custom notification schedules</li>
+                  <li>Admin-only configuration</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">📱</span>
+              <h3 class="feature-title">Web Dashboard</h3>
+              <p class="feature-description">Manage your bot settings through an intuitive web interface with Discord OAuth2 authentication.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Secure Discord login</li>
+                  <li>Real-time server management</li>
+                  <li>User-friendly interface</li>
+                  <li>Mobile-responsive design</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">🚀</span>
+              <h3 class="feature-title">Performance & Reliability</h3>
+              <p class="feature-description">Built with modern technology stack ensuring high performance, reliability, and minimal downtime.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Rate limiting protection</li>
+                  <li>Database persistence</li>
+                  <li>Error handling & fallbacks</li>
+                  <li>24/7 uptime monitoring</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div class="cta-section">
+            <h2 class="cta-title">Ready to Transform Your Server?</h2>
+            <p class="cta-text">Join thousands of anime communities already using OtakuPulse</p>
+            <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=2048&scope=bot%20applications.commands" class="btn">Add Bot to Server</a>
+            <a href="/getting-started" class="btn">Getting Started Guide</a>
+          </div>
+        </div>
+      </body>
+    </html>
+    `);
+});
+
+// Getting Started page
+app.get('/getting-started', (req, res) => {
+    res.send(`
+    <html>
+      <head>
+        <title>Getting Started - OtakuPulse Bot</title>
+        <link rel="icon" href="/1.ico" type="image/x-icon">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(120deg, #16211c 0%, #10151c 100%);
+            color: #e6e6e6;
+            min-height: 100vh;
+            overflow-x: hidden;
+          }
+          .grid-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, #1e2a22 0px, #1e2a22 1px, transparent 1px, transparent 40px),
+                        repeating-linear-gradient(90deg, #1e2a22 0px, #1e2a22 1px, transparent 1px, transparent 40px);
+          }
+          .navbar {
+            position: fixed;
+            top: 32px; left: 0; width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0 48px;
+            z-index: 2;
+          }
+          .navbar-glass {
+            background: rgba(30, 40, 36, 0.7);
+            border-radius: 32px;
+            box-shadow: 0 2px 24px #10151c44;
+            padding: 12px 32px;
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            backdrop-filter: blur(10px);
+          }
+          .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #e6e6e6;
+            letter-spacing: -1px;
+            text-decoration: none;
+          }
+          .nav-links {
+            display: flex;
+            gap: 24px;
+          }
+          .nav-link {
+            color: #b0b8c1;
+            font-size: 1rem;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+          }
+          .nav-link:hover, .nav-link.active {
+            color: #7fffd4;
+          }
+          .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 120px 32px 80px;
+            position: relative;
+            z-index: 1;
+          }
+          .page-header {
+            text-align: center;
+            margin-bottom: 80px;
+          }
+          .page-title {
+            font-size: 3.5rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 24px;
+            text-shadow: 0 2px 32px #7fffd444;
+          }
+          .page-subtitle {
+            font-size: 1.3rem;
+            color: #b0b8c1;
+            opacity: 0.85;
+          }
+          .step-container {
+            margin-bottom: 40px;
+          }
+          .step-card {
+            background: rgba(30, 40, 36, 0.85);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 2px 32px #10151c44;
+            border: 1px solid rgba(127, 255, 212, 0.3);
+            backdrop-filter: blur(2px);
+            margin-bottom: 24px;
+          }
+          .step-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 24px;
+          }
+          .step-number {
+            background: #7fffd4;
+            color: #0d1117;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.2rem;
+            margin-right: 20px;
+          }
+          .step-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #7fffd4;
+            margin: 0;
+          }
+          .step-description {
+            font-size: 1.1rem;
+            color: #e6e6e6;
+            line-height: 1.6;
+            margin-bottom: 20px;
+          }
+          .step-details {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid #7fffd4;
+          }
+          .step-details ul {
+            margin: 0;
+            padding-left: 20px;
+          }
+          .step-details li {
+            margin-bottom: 8px;
+            color: #b0b8c1;
+          }
+          .code-block {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Courier New', monospace;
+            color: #7fffd4;
+            margin: 16px 0;
+            overflow-x: auto;
+          }
+          .btn {
+            background: rgba(255,255,255,0.08);
+            color: #e6e6e6;
+            padding: 18px 38px;
+            border: 1px solid #7fffd4;
+            border-radius: 32px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 24px #7fffd433;
+            transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+            text-decoration: none;
+            display: inline-block;
+            backdrop-filter: blur(2px);
+            margin: 8px;
+          }
+          .btn:hover {
+            background: rgba(127,255,212,0.12);
+            color: #7fffd4;
+            box-shadow: 0 4px 32px #7fffd455;
+          }
+          .btn-primary {
+            background: #7fffd4;
+            color: #0d1117;
+          }
+          .btn-primary:hover {
+            background: #6ee7c7;
+            color: #0d1117;
+          }
+          .info-box {
+            background: rgba(127, 255, 212, 0.1);
+            border: 1px solid rgba(127, 255, 212, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+          }
+          .info-box-title {
+            color: #7fffd4;
+            font-weight: 700;
+            margin-bottom: 8px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="grid-bg"></div>
+        <div class="navbar">
+          <div class="navbar-glass">
+            <a href="/" class="logo">OtakuPulse</a>
+            <div class="nav-links">
+              <a href="/features" class="nav-link">Features</a>
+              <a href="/getting-started" class="nav-link active">Getting Started</a>
+              <a href="/commands" class="nav-link">Commands</a>
+              <a href="/oauth/login" class="nav-link">Sign In</a>
+            </div>
+          </div>
+        </div>
+        
+        <div class="container">
+          <div class="page-header">
+            <h1 class="page-title">🚀 Getting Started</h1>
+            <p class="page-subtitle">Set up OtakuPulse in just a few simple steps</p>
+          </div>
+          
+          <div class="step-container">
+            <div class="step-card">
+              <div class="step-header">
+                <div class="step-number">1</div>
+                <h2 class="step-title">Add Bot to Your Server</h2>
+              </div>
+              <p class="step-description">Click the button below to invite OtakuPulse to your Discord server. You'll need "Manage Server" permissions to add the bot.</p>
+              <div class="step-details">
+                <p><strong>Required Permissions:</strong></p>
+                <ul>
+                  <li>Send Messages</li>
+                  <li>Use Slash Commands</li>
+                  <li>Embed Links</li>
+                  <li>Read Message History</li>
+                  <li>Connect</li>
+                </ul>
+              </div>
+              <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=2048&scope=bot%20applications.commands" class="btn btn-primary">Add Bot to Server</a>
+            </div>
+            
+            <div class="step-card">
+              <div class="step-header">
+                <div class="step-number">2</div>
+                <h2 class="step-title">Run Initial Setup</h2>
+              </div>
+              <p class="step-description">Use the setup command to configure OtakuPulse for your server. This will enable all features and set a default notification channel.</p>
+              <div class="code-block">/setup #your-anime-channel</div>
+              <div class="step-details">
+                <p><strong>What this does:</strong></p>
+                <ul>
+                  <li>Enables all anime features (quotes, alerts, rankings)</li>
+                  <li>Sets your chosen channel for notifications</li>
+                  <li>Configures default settings</li>
+                  <li>Creates database entry for your server</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div class="step-card">
+              <div class="step-header">
+                <div class="step-number">3</div>
+                <h2 class="step-title">Customize Your Settings</h2>
+              </div>
+              <p class="step-description">Access the web dashboard to fine-tune your bot settings. You can enable/disable specific features and assign different channels for different types of notifications.</p>
+              <div class="step-details">
+                <p><strong>Dashboard Features:</strong></p>
+                <ul>
+                  <li>Enable/disable specific features per server</li>
+                  <li>Set different channels for different notification types</li>
+                  <li>View bot statistics and server status</li>
+                  <li>Secure Discord OAuth2 authentication</li>
+                </ul>
+              </div>
+              <a href="/oauth/login" class="btn">Access Dashboard</a>
+            </div>
+            
+            <div class="step-card">
+              <div class="step-header">
+                <div class="step-number">4</div>
+                <h2 class="step-title">Explore Commands</h2>
+              </div>
+              <p class="step-description">Try out the various commands to see what OtakuPulse can do. Start with a simple quote or search for your favorite anime!</p>
+              <div class="step-details">
+                <p><strong>Quick Start Commands:</strong></p>
+                <ul>
+                  <li><code>/quote</code> - Get a random anime quote</li>
+                  <li><code>/airing</code> - See currently airing anime</li>
+                  <li><code>/search attack on titan</code> - Search for anime</li>
+                  <li><code>/help</code> - View all available commands</li>
+                </ul>
+              </div>
+              <a href="/commands" class="btn">View All Commands</a>
+            </div>
+          </div>
+          
+          <div class="info-box">
+            <div class="info-box-title">💡 Pro Tips</div>
+            <ul>
+              <li>Create dedicated channels for different types of notifications (e.g., #anime-quotes, #anime-updates)</li>
+              <li>Use the web dashboard to enable only the features your community wants</li>
+              <li>Check the <code>/settings</code> command to review your current configuration</li>
+              <li>Daily quotes are automatically posted at 8 AM and 9 PM server time</li>
+              <li>Weekly rankings are posted every Sunday at 10 AM</li>
+            </ul>
+          </div>
+          
+          <div class="info-box">
+            <div class="info-box-title">🆘 Need Help?</div>
+            <p>If you encounter any issues or have questions:</p>
+            <ul>
+              <li>Use <code>/help</code> to see all available commands</li>
+              <li>Check your bot permissions if commands aren't working</li>
+              <li>Make sure the bot has access to your notification channels</li>
+              <li>Join our support Discord server for assistance</li>
+            </ul>
+            <a href="https://discord.gg/qrzdHN8mu2" class="btn">Join Support Server</a>
+          </div>
+        </div>
+      </body>
+    </html>
+    `);
+});
+
+// Commands page
+app.get('/commands', (req, res) => {
+    res.send(`
+    <html>
+      <head>
+        <title>Commands - OtakuPulse Bot</title>
+        <link rel="icon" href="/1.ico" type="image/x-icon">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+        <style>
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', Arial, sans-serif;
+            background: linear-gradient(120deg, #16211c 0%, #10151c 100%);
+            color: #e6e6e6;
+            min-height: 100vh;
+            overflow-x: hidden;
+          }
+          .grid-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(0deg, #1e2a22 0px, #1e2a22 1px, transparent 1px, transparent 40px),
+                        repeating-linear-gradient(90deg, #1e2a22 0px, #1e2a22 1px, transparent 1px, transparent 40px);
+          }
+          .navbar {
+            position: fixed;
+            top: 32px; left: 0; width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 0 48px;
+            z-index: 2;
+          }
+          .navbar-glass {
+            background: rgba(30, 40, 36, 0.7);
+            border-radius: 32px;
+            box-shadow: 0 2px 24px #10151c44;
+            padding: 12px 32px;
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            backdrop-filter: blur(10px);
+          }
+          .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #e6e6e6;
+            letter-spacing: -1px;
+            text-decoration: none;
+          }
+          .nav-links {
+            display: flex;
+            gap: 24px;
+          }
+          .nav-link {
+            color: #b0b8c1;
+            font-size: 1rem;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s;
+          }
+          .nav-link:hover, .nav-link.active {
+            color: #7fffd4;
+          }
+          .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 120px 32px 80px;
+            position: relative;
+            z-index: 1;
+          }
+          .page-header {
+            text-align: center;
+            margin-bottom: 80px;
+          }
+          .page-title {
+            font-size: 3.5rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 24px;
+            text-shadow: 0 2px 32px #7fffd444;
+          }
+          .page-subtitle {
+            font-size: 1.3rem;
+            color: #b0b8c1;
+            opacity: 0.85;
+          }
+          .commands-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+            margin-bottom: 60px;
+          }
+          .command-card {
+            background: rgba(30, 40, 36, 0.85);
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: 0 2px 32px #10151c44;
+            border: 1px solid rgba(127, 255, 212, 0.3);
+            backdrop-filter: blur(2px);
+            transition: transform 0.3s, box-shadow 0.3s;
+          }
+          .command-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 36px #10151c66;
+          }
+          .command-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 16px;
+          }
+          .command-icon {
+            font-size: 2rem;
+            margin-right: 16px;
+          }
+          .command-name {
+            font-family: 'Courier New', monospace;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #7fffd4;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin: 0;
+          }
+          .command-description {
+            font-size: 1.1rem;
+            color: #e6e6e6;
+            line-height: 1.5;
+            margin-bottom: 20px;
+          }
+          .command-usage {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            border-left: 4px solid #7fffd4;
+          }
+          .command-usage-title {
+            font-size: 0.9rem;
+            color: #7fffd4;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+          }
+          .command-usage-text {
+            font-family: 'Courier New', monospace;
+            color: #fff;
+            font-size: 1rem;
+          }
+          .command-examples {
+            margin-top: 16px;
+          }
+          .command-examples-title {
+            font-size: 0.9rem;
+            color: #b0b8c1;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+          }
+          .example {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 6px 10px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            color: #b0b8c1;
+            font-size: 0.95rem;
+          }
+          .permission-badge {
+            display: inline-block;
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 8px;
+          }
+          .category-section {
+            margin-bottom: 60px;
+          }
+          .category-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #7fffd4;
+            margin-bottom: 32px;
+            text-align: center;
+          }
+          .btn {
+            background: rgba(255,255,255,0.08);
+            color: #e6e6e6;
+            padding: 18px 38px;
+            border: 1px solid #7fffd4;
+            border-radius: 32px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 24px #7fffd433;
+            transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+            text-decoration: none;
+            display: inline-block;
+            backdrop-filter: blur(2px);
+            margin: 8px;
+          }
+          .btn:hover {
+            background: rgba(127,255,212,0.12);
+            color: #7fffd4;
+            box-shadow: 0 4px 32px #7fffd455;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="grid-bg"></div>
+        <div class="navbar">
+          <div class="navbar-glass">
+            <a href="/" class="logo">OtakuPulse</a>
+            <div class="nav-links">
+              <a href="/features" class="nav-link">Features</a>
+              <a href="/getting-started" class="nav-link">Getting Started</a>
+              <a href="/commands" class="nav-link active">Commands</a>
+              <a href="/oauth/login" class="nav-link">Sign In</a>
+            </div>
+          </div>
+        </div>
+        
+        <div class="container">
+          <div class="page-header">
+            <h1 class="page-title">📖 Command Reference</h1>
+            <p class="page-subtitle">Complete guide to all OtakuPulse commands</p>
+          </div>
+          
+          <div class="category-section">
+            <h2 class="category-title">🛠️ Setup & Configuration</h2>
+            <div class="commands-grid">
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">⚙️</span>
+                  <h3 class="command-name">/setup</h3>
+                </div>
+                <p class="command-description">Configure OtakuPulse for your server. This command sets up all features and designates a notification channel.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/setup #channel</div>
+                </div>
+                <div class="command-examples">
+                  <div class="command-examples-title">Examples</div>
+                  <div class="example">/setup #anime-updates</div>
+                  <div class="example">/setup #general</div>
+                </div>
+                <span class="permission-badge">Admin Only</span>
+              </div>
+              
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">📊</span>
+                  <h3 class="command-name">/settings</h3>
+                </div>
+                <p class="command-description">View current bot configuration for your server, including enabled features and notification channels.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/settings</div>
+                </div>
+                <span class="permission-badge">Admin Only</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="category-section">
+            <h2 class="category-title">🎌 Anime Content</h2>
+            <div class="commands-grid">
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">💬</span>
+                  <h3 class="command-name">/quote</h3>
+                </div>
+                <p class="command-description">Get inspiring anime quotes from beloved characters. You can request random quotes or quotes from specific anime series.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/quote [anime]</div>
+                </div>
+                <div class="command-examples">
+                  <div class="command-examples-title">Examples</div>
+                  <div class="example">/quote</div>
+                  <div class="example">/quote Naruto</div>
+                  <div class="example">/quote "Attack on Titan"</div>
+                </div>
+              </div>
+              
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">📺</span>
+                  <h3 class="command-name">/airing</h3>
+                </div>
+                <p class="command-description">Display the top currently airing anime series with their current status, scores, and episode counts.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/airing</div>
+                </div>
+              </div>
+              
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">🏆</span>
+                  <h3 class="command-name">/top-anime</h3>
+                </div>
+                <p class="command-description">View the highest-rated anime series based on popularity and user scores from the AniList database.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/top-anime</div>
+                </div>
+              </div>
+              
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">🔍</span>
+                  <h3 class="command-name">/search</h3>
+                </div>
+                <p class="command-description">Search for any anime series in the comprehensive AniList database. Get detailed information including ratings and episode counts.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/search &lt;query&gt;</div>
+                </div>
+                <div class="command-examples">
+                  <div class="command-examples-title">Examples</div>
+                  <div class="example">/search demon slayer</div>
+                  <div class="example">/search "jujutsu kaisen"</div>
+                  <div class="example">/search studio ghibli</div>
+                </div>
+              </div>
+              
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">🎬</span>
+                  <h3 class="command-name">/trailer</h3>
+                </div>
+                <p class="command-description">Get official trailers and promotional videos for anime series. Links directly to YouTube videos when available.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/trailer &lt;anime&gt;</div>
+                </div>
+                <div class="command-examples">
+                  <div class="command-examples-title">Examples</div>
+                  <div class="example">/trailer "spirited away"</div>
+                  <div class="example">/trailer one piece</div>
+                  <div class="example">/trailer "your name"</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="category-section">
+            <h2 class="category-title">ℹ️ Information & Help</h2>
+            <div class="commands-grid">
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">❓</span>
+                  <h3 class="command-name">/help</h3>
+                </div>
+                <p class="command-description">Display a comprehensive help message with all available commands and their descriptions.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/help</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div style="text-align: center; margin-top: 60px;">
+            <h2 style="color: #7fffd4; margin-bottom: 16px;">Ready to start using commands?</h2>
+            <p style="color: #b0b8c1; margin-bottom: 32px;">Add OtakuPulse to your server and try these commands today!</p>
+            <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=2048&scope=bot%20applications.commands" class="btn">Add Bot to Server</a>
+            <a href="/getting-started" class="btn">Setup Guide</a>
+          </div>
+        </div>
+      </body>
+    </html>
+    `);
 });
 
 app.get('/', (req, res) => {
@@ -1486,9 +2502,9 @@ app.get('/', (req, res) => {
           <div class="navbar-glass">
             <span class="logo">OtakuPulse</span>
             <div class="nav-links">
-              <a href="#features" class="nav-link">Features</a>
-              <a href="#getting-started" class="nav-link">Getting Started</a>
-              <a href="#commands" class="nav-link">Commands</a>
+              <a href="/features" class="nav-link">Features</a>
+              <a href="/getting-started" class="nav-link">Getting Started</a>
+              <a href="/commands" class="nav-link">Commands</a>
               <a href="/oauth/login" class="nav-link">Sign In</a>
             </div>
           </div>
@@ -1508,34 +2524,15 @@ app.get('/', (req, res) => {
             </div>
             
           </div>
-        </div><br><br><br><br>
-        <div class="features-section" id="features">
-          <h3>🔥 Features</h3>
-          <ul class="features-list">
-            <li>📺 Real-time currently airing anime updates</li>
-            <li>🎬 Latest anime trailers and promos</li>
-            <li>🎌 Daily anime quotes from your favorite characters</li>
-            <li>🏆 Weekly top anime rankings</li>
-            <li>🔍 Anime search functionality</li>
-            <li>⚙️ Customizable server settings</li>
-            <li>📱 Web dashboard for easy management</li>
-          </ul>
-          <div class="getting-started" id="getting-started">
-            <h3>🚀 Getting Started</h3>
-            <p><a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=2048&scope=bot%20applications.commands" class="btn">Add Bot to Server</a></p>
-          </div>
-          <div id="commands">
-            <h3>📖 Commands</h3>
-            <ul class="commands-list">
-              <li><code>/setup</code> - Configure the bot for your server</li>
-              <li><code>/anime-quote</code> - Get random anime quotes</li>
-              <li><code>/quote</code> - Get inspirational quotes</li>
-              <li><code>/airing</code> - Check currently airing anime</li>
-              <li><code>/top-anime</code> - View top-rated anime</li>
-              <li><code>/search</code> - Search for anime</li>
-              <li><code>/trailer</code> - Get anime trailers</li>
-              <li><code>/help</code> - Show all commands</li>
-            </ul>
+        </div>
+        
+        <div style="text-align: center; padding: 80px 32px; max-width: 900px; margin: 0 auto;">
+          <h2 style="color: #7fffd4; font-size: 2.2rem; margin-bottom: 24px; font-weight: 700;">🎌 Your All-In-One Anime Hub</h2>
+          <p style="color: #b0b8c1; font-size: 1.2rem; margin-bottom: 40px; opacity: 0.85;">Join thousands of Discord communities already using OtakuPulse for their anime content needs.</p>
+          <div style="display: flex; gap: 24px; justify-content: center; flex-wrap: wrap;">
+            <a href="/features" class="btn">Explore Features</a>
+            <a href="/getting-started" class="btn">Get Started</a>
+            <a href="https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=2048&scope=bot%20applications.commands" class="btn">Add to Server</a>
           </div>
         </div>
         <br>
