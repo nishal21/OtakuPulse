@@ -735,6 +735,11 @@ async function sendDailyQuotes() {
 async function checkNewEpisodes() {
     const airingAnime = await AnimeAPI.getCurrentlyAiring();
     
+    if (!airingAnime || airingAnime.length === 0) {
+        console.log('No airing anime data available for episode check');
+        return;
+    }
+    
     const botGuilds = Array.from(client.guilds.cache.values());
     for (const guild of botGuilds) {
         const settings = await getGuildSettings(guild.id);
@@ -748,16 +753,16 @@ async function checkNewEpisodes() {
             if (randomAnime) {
                 const embed = new EmbedBuilder()
                     .setTitle('📺 Anime Update')
-                    .setDescription(`**${randomAnime.title}** is currently airing!`)
+                    .setDescription(`**${randomAnime.title?.romaji || 'Unknown Anime'}** is currently airing!`)
                     .addFields(
-                        { name: 'Status', value: randomAnime.status, inline: true },
-                        { name: 'Score', value: randomAnime.score?.toString() || 'N/A', inline: true },
+                        { name: 'Status', value: randomAnime.status || 'Unknown', inline: true },
+                        { name: 'Score', value: randomAnime.averageScore?.toString() || 'N/A', inline: true },
                         { name: 'Episodes', value: randomAnime.episodes?.toString() || 'Ongoing', inline: true }
                     )
                     .setColor('#FFD93D')
                     .setTimestamp();
-                if (randomAnime.images?.jpg?.large_image_url) {
-                    embed.setImage(randomAnime.images.jpg.large_image_url);
+                if (randomAnime.coverImage?.large) {
+                    embed.setThumbnail(randomAnime.coverImage.large);
                 }
                 await channel.send({ embeds: [embed] });
             }
@@ -770,26 +775,39 @@ async function checkNewEpisodes() {
 async function sendWeeklyTopAnime() {
     const topAnime = await AnimeAPI.getTopAnime();
     
+    if (!topAnime || topAnime.length === 0) {
+        console.log('No top anime data available for weekly rankings');
+        return;
+    }
+    
     const botGuilds = Array.from(client.guilds.cache.values());
     for (const guild of botGuilds) {
         const settings = await getGuildSettings(guild.id);
-        if (!settings) continue;
+        if (!settings || !settings.top_anime_rankings) continue;
         try {
             const channelId = settings.top_anime_rankings_channel || settings.notification_channel;
             const channel = guild.channels.cache.get(channelId);
             if (!channel) continue;
+            
             const embed = new EmbedBuilder()
                 .setTitle('🏆 Weekly Top Anime')
                 .setDescription('Here are this week\'s top-rated anime:')
                 .setColor('#6C5CE7')
-                .setTimestamp();
+                .setTimestamp()
+                .setFooter({ text: 'OtakuPulse • AniList API' });
+                
             topAnime.slice(0, 5).forEach((anime, index) => {
                 embed.addFields({
-                    name: `${index + 1}. ${anime.title}`,
-                    value: `**Score:** ${anime.score}\n**Rank:** #${anime.rank}`,
+                    name: `#${index + 1} • ${anime.title?.romaji || 'Unknown Anime'}`,
+                    value: `⭐ **Score:** ${anime.averageScore || 'N/A'}\n📺 **Episodes:** ${anime.episodes || 'N/A'}\n📡 **Status:** ${anime.status || 'N/A'}`,
                     inline: true
                 });
             });
+            
+            if (topAnime.length > 0 && topAnime[0].coverImage?.large) {
+                embed.setThumbnail(topAnime[0].coverImage.large);
+            }
+            
             await channel.send({ embeds: [embed] });
         } catch (error) {
             console.error(`Error sending weekly top anime to guild ${guild.id}:`, error);
