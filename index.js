@@ -224,44 +224,73 @@ class AnimeAPI {
                 url = `https://api.animechan.io/v1/quotes/random?anime=${encodeURIComponent(anime)}`;
                 try {
                     const response = await axios.get(url);
-                    if (response.data && response.data.quote) {
-                        return response.data;
+                    if (response.data && response.data.status === 'success' && response.data.data) {
+                        // New API format: response.data.data contains the quote
+                        const quoteData = response.data.data;
+                        return {
+                            quote: quoteData.content,
+                            anime: quoteData.anime.name,
+                            character: quoteData.character.name
+                        };
                     } else {
                         console.warn(`No quote found for anime: ${anime}. Falling back to random quote.`);
+                        // Try random quote
                         url = 'https://api.animechan.io/v1/quotes/random';
                         const randomResponse = await axios.get(url);
-                        if (randomResponse.data && randomResponse.data.quote) {
-                            return randomResponse.data;
-                        } else {
-                            return null;
+                        if (randomResponse.data && randomResponse.data.status === 'success' && randomResponse.data.data) {
+                            const quoteData = randomResponse.data.data;
+                            return {
+                                quote: quoteData.content,
+                                anime: quoteData.anime.name,
+                                character: quoteData.character.name
+                            };
                         }
-                    }
-                } catch (err) {
-                    if (err.response && err.response.status === 404) {
-                        console.warn(`No quote found for anime: ${anime}. Falling back to random quote.`);
-                    } else {
-                        console.error(`Error fetching quote for anime: ${anime}:`, err.message);
-                    }
-                    url = 'https://api.animechan.io/v1/quotes/random';
-                    const randomResponse = await axios.get(url);
-                    if (randomResponse.data && randomResponse.data.quote) {
-                        return randomResponse.data;
-                    } else {
                         return null;
                     }
+                } catch (err) {
+                    console.error(`Error fetching quote for anime: ${anime}:`, err.message);
+                    // Fallback to random quote
+                    url = 'https://api.animechan.io/v1/quotes/random';
+                    try {
+                        const randomResponse = await axios.get(url);
+                        if (randomResponse.data && randomResponse.data.status === 'success' && randomResponse.data.data) {
+                            const quoteData = randomResponse.data.data;
+                            return {
+                                quote: quoteData.content,
+                                anime: quoteData.anime.name,
+                                character: quoteData.character.name
+                            };
+                        }
+                    } catch (fallbackErr) {
+                        console.error('Error fetching fallback random quote:', fallbackErr.message);
+                    }
+                    return null;
                 }
             } else {
                 url = 'https://api.animechan.io/v1/quotes/random';
                 const response = await axios.get(url);
-                if (response.data && response.data.quote) {
-                    return response.data;
+                if (response.data && response.data.status === 'success' && response.data.data) {
+                    const quoteData = response.data.data;
+                    return {
+                        quote: quoteData.content,
+                        anime: quoteData.anime.name,
+                        character: quoteData.character.name
+                    };
                 } else {
                     return null;
                 }
             }
         } catch (error) {
             console.error('Error fetching anime quote:', error.message);
-            return null;
+            // Return fallback quote if all API calls fail
+            const fallbackQuotes = [
+                { quote: "To know sorrow is not terrifying. What is terrifying is to know you can't go back to happiness you could have.", anime: "Bleach", character: "Matsumoto Rangiku" },
+                { quote: "No one knows what the future holds. That's why its potential is infinite.", anime: "Steins;Gate", character: "Rintarou Okabe" },
+                { quote: "It's not the face that makes someone a monster; it's the choices they make with their lives.", anime: "Naruto", character: "Naruto Uzumaki" },
+                { quote: "People's lives don't end when they die. It ends when they lose faith.", anime: "Naruto", character: "Itachi Uchiha" },
+                { quote: "Hard work is absolutely necessary, but in the end, ability decides everything.", anime: "Naruto", character: "Madara Uchiha" }
+            ];
+            return fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
         }
     }
 
@@ -413,25 +442,28 @@ async function handleSetup(interaction) {
     const channel = interaction.options.getChannel('channel');
     const guildId = interaction.guildId;
     
-    guildSettings.set(guildId, {
-        // Default all notification types to the selected channel
-        notificationChannel: channel.id,
-        dailyQuotesChannel: channel.id,
-        airingAlertsChannel: channel.id,
-        trailerNotificationsChannel: channel.id,
-        topAnimeRankingsChannel: channel.id,
-        animeSearchChannel: channel.id,
-        dailyQuotes: true,
-        airingAlerts: true,
-        trailerNotifications: true,
-        topAnimeRankings: true,
-        animeSearch: true
-    });
+    // Save to Neon DB instead of in-memory map
+    const settings = {
+        notification_channel: channel.id,
+        daily_quotes_channel: channel.id,
+        airing_alerts_channel: channel.id,
+        trailer_notifications_channel: channel.id,
+        top_anime_rankings_channel: channel.id,
+        anime_search_channel: channel.id,
+        daily_quotes: true,
+        airing_alerts: true,
+        trailer_notifications: true,
+        top_anime_rankings: true,
+        anime_search: true
+    };
+    
+    await setGuildSettings(guildId, settings);
     
     const embed = new EmbedBuilder()
         .setTitle('✅ Setup Complete!')
-        .setDescription(`OtakuPulse has been configured for this server.\n\n**Notification Channel:** ${channel}\n**Daily Quotes:** Enabled\n**Airing Alerts:** Enabled\n**Trailer Notifications:** Enabled`)
+        .setDescription(`OtakuPulse has been configured for this server.\n\n**Notification Channel:** ${channel}\n**Daily Quotes:** Enabled\n**Airing Alerts:** Enabled\n**Trailer Notifications:** Enabled\n**Top Anime Rankings:** Enabled\n**Anime Search:** Enabled`)
         .setColor('#00FF00')
+        .setFooter({ text: 'OtakuPulse • Setup Complete' })
         .setTimestamp();
     
     await interaction.editReply({ embeds: [embed] });
@@ -571,23 +603,25 @@ async function handleTrailer(interaction) {
 
 async function handleSettings(interaction) {
     const guildId = interaction.guildId;
-    const settings = guildSettings.get(guildId);
+    const settings = await getGuildSettings(guildId);
     
     if (!settings) {
         await interaction.editReply('No settings found for this server. Use `/setup` to configure the bot.');
         return;
     }
     
-    const channel = interaction.guild.channels.cache.get(settings.notificationChannel);
+    const channel = interaction.guild.channels.cache.get(settings.notification_channel);
     
     const embed = new EmbedBuilder()
         .setColor('#74B9FF')
         .setTitle('⚙️ Server Settings')
         .addFields(
             { name: 'Notification Channel', value: channel ? channel.toString() : 'Not found', inline: true },
-            { name: 'Daily Quotes', value: settings.dailyQuotes ? '✅ Enabled' : '❌ Disabled', inline: true },
-            { name: 'Airing Alerts', value: settings.airingAlerts ? '✅ Enabled' : '❌ Disabled', inline: true },
-            { name: 'Trailer Notifications', value: settings.trailerNotifications ? '✅ Enabled' : '❌ Disabled', inline: true }
+            { name: 'Daily Quotes', value: settings.daily_quotes ? '✅ Enabled' : '❌ Disabled', inline: true },
+            { name: 'Airing Alerts', value: settings.airing_alerts ? '✅ Enabled' : '❌ Disabled', inline: true },
+            { name: 'Trailer Notifications', value: settings.trailer_notifications ? '✅ Enabled' : '❌ Disabled', inline: true },
+            { name: 'Top Anime Rankings', value: settings.top_anime_rankings ? '✅ Enabled' : '❌ Disabled', inline: true },
+            { name: 'Anime Search', value: settings.anime_search ? '✅ Enabled' : '❌ Disabled', inline: true }
         )
         .setFooter({ text: 'OtakuPulse • Server Settings', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
         .setTimestamp()
@@ -637,12 +671,13 @@ function startScheduledTasks() {
             } else {
                 // Fetch quote from animechan API
                 try {
-                    const response = await axios.get('https://animechan.vercel.app/api/random');
-                    if (response.data && response.data.quote) {
+                    const response = await axios.get('https://api.animechan.io/v1/quotes/random');
+                    if (response.data && response.data.status === 'success' && response.data.data) {
+                        const quoteData = response.data.data;
                         quote = {
-                            quote: response.data.quote,
-                            anime: response.data.anime,
-                            character: response.data.character
+                            quote: quoteData.content,
+                            anime: quoteData.anime.name,
+                            character: quoteData.character.name
                         };
                         startScheduledTasks.lastQuote = quote;
                         startScheduledTasks.lastTimestamp = now;
@@ -681,6 +716,19 @@ function startScheduledTasks() {
                         console.error('Daily quote channel not found or bot lacks access:', channelId);
                         continue;
                     }
+                    
+                    // Create the embed for this quote
+                    const embed = new EmbedBuilder()
+                        .setTitle('🌅 Daily Anime Quote')
+                        .setDescription(`*"${quote.quote}"*`)
+                        .addFields(
+                            { name: 'Character', value: `🎭 ${quote.character}`, inline: true },
+                            { name: 'Anime', value: `📺 ${quote.anime}`, inline: true }
+                        )
+                        .setColor('#FF6B6B')
+                        .setFooter({ text: 'OtakuPulse • Daily Quotes' })
+                        .setTimestamp();
+                    
                     console.log(`Sending daily quote to channel ${channel.id} in server ${guild.id}`);
                     await channel.send({ embeds: [embed] });
                     console.log(`Successfully sent daily quote to channel ${channel.id}`);
