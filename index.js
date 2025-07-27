@@ -34,7 +34,7 @@ app.use(session({
 
 
 // Neon DB integration
-const { ensureGuildSettingsTable, getGuildSettings, setGuildSettings } = require('./db');
+const { ensureGuildSettingsTable, getGuildSettings, setGuildSettings, isMangaUpdateNotified, recordMangaUpdate } = require('./db');
 
 // Ensure DB table exists at startup
 ensureGuildSettingsTable().catch(console.error);
@@ -296,6 +296,78 @@ class AnimeAPI {
             return fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
         }
     }
+
+    // Search for manga
+    static async searchManga(query) {
+        await rateLimit('anilist');
+        const queryGraphQL = `
+            query ($search: String, $perPage: Int) {
+                Page(perPage: $perPage) {
+                    media(search: $search, type: MANGA) {
+                        id
+                        title { romaji }
+                        coverImage { large }
+                        description(asHtml: false)
+                        chapters
+                        volumes
+                        averageScore
+                        status
+                        updatedAt
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(queryGraphQL, { search: query, perPage: 5 });
+        return data?.Page?.media || [];
+    }
+
+    // Get recently updated manga
+    static async getRecentlyUpdatedManga() {
+        await rateLimit('anilist');
+        const queryGraphQL = `
+            query ($perPage: Int) {
+                Page(perPage: $perPage) {
+                    media(type: MANGA, status: RELEASING, sort: UPDATED_AT_DESC) {
+                        id
+                        title { romaji }
+                        coverImage { large }
+                        description(asHtml: false)
+                        chapters
+                        volumes
+                        averageScore
+                        status
+                        updatedAt
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(queryGraphQL, { perPage: 10 });
+        return data?.Page?.media || [];
+    }
+
+    // Get popular releasing manga
+    static async getPopularManga() {
+        await rateLimit('anilist');
+        const queryGraphQL = `
+            query ($perPage: Int) {
+                Page(perPage: $perPage) {
+                    media(type: MANGA, status: RELEASING, sort: POPULARITY_DESC) {
+                        id
+                        title { romaji }
+                        coverImage { large }
+                        description(asHtml: false)
+                        chapters
+                        volumes
+                        averageScore
+                        status
+                        updatedAt
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(queryGraphQL, { perPage: 10 });
+        return data?.Page?.media || [];
+    }
 }
 
 // Slash commands
@@ -343,6 +415,15 @@ const commands = [
             option.setName('anime')
                 .setDescription('Anime name to get trailer for')
                 .setRequired(true)
+        ),
+    
+    new SlashCommandBuilder()
+        .setName('manga')
+        .setDescription('Search for manga or get latest chapters')
+        .addStringOption(option =>
+            option.setName('query')
+                .setDescription('Manga to search for (optional - shows popular manga if not provided)')
+                .setRequired(false)
         ),
     
     new SlashCommandBuilder()
@@ -403,6 +484,9 @@ client.on('interactionCreate', async interaction => {
             case 'trailer':
                 await handleTrailer(interaction);
                 break;
+            case 'manga':
+                await handleManga(interaction);
+                break;
             case 'settings':
                 await handleSettings(interaction);
                 break;
@@ -431,18 +515,20 @@ async function handleSetup(interaction) {
         trailer_notifications_channel: channel.id,
         top_anime_rankings_channel: channel.id,
         anime_search_channel: channel.id,
+        manga_updates_channel: channel.id,
         daily_quotes: true,
         airing_alerts: true,
         trailer_notifications: true,
         top_anime_rankings: true,
-        anime_search: true
+        anime_search: true,
+        manga_updates: true
     };
     
     await setGuildSettings(guildId, settings);
     
     const embed = new EmbedBuilder()
         .setTitle('✅ Setup Complete!')
-        .setDescription(`OtakuPulse has been configured for this server.\n\n**Notification Channel:** ${channel}\n**Daily Quotes:** Enabled\n**Airing Alerts:** Enabled\n**Trailer Notifications:** Enabled\n**Top Anime Rankings:** Enabled\n**Anime Search:** Enabled`)
+        .setDescription(`OtakuPulse has been configured for this server.\n\n**Notification Channel:** ${channel}\n**Daily Quotes:** Enabled\n**Airing Alerts:** Enabled\n**Trailer Notifications:** Enabled\n**Top Anime Rankings:** Enabled\n**Anime Search:** Enabled\n**Manga Updates:** Enabled`)
         .setColor('#00FF00')
         .setFooter({ text: 'OtakuPulse • Setup Complete' })
         .setTimestamp();
@@ -582,6 +668,102 @@ async function handleTrailer(interaction) {
     await interaction.editReply({ embeds: [embed] });
 }
 
+async function handleManga(interaction) {
+    const query = interaction.options.getString('query');
+    
+    let mangaResults;
+    let embedTitle;
+    let embedDescription;
+    
+    if (query) {
+        // Search for specific manga
+        mangaResults = await AnimeAPI.searchManga(query);
+        embedTitle = `📚 Search Results for "${query}"`;
+        embedDescription = mangaResults.length > 0 ? 
+            `Found ${mangaResults.length} result${mangaResults.length > 1 ? 's' : ''} for your search.` :
+            `No manga found for "${query}". Please try a different search term.`;
+    } else {
+        // Show popular manga
+        mangaResults = await AnimeAPI.getPopularManga();
+        embedTitle = '📚 Popular Manga';
+        embedDescription = 'Here are some popular manga series currently being released:';
+    }
+
+    if (mangaResults.length === 0) {
+        await interaction.editReply(query ? 
+            `No manga found for "${query}". Please try a different search term.` :
+            'Could not fetch popular manga at this time. Please try again later.');
+        return;
+    }
+
+    if (query && mangaResults.length === 1) {
+        // Show detailed view for single search result
+        const manga = mangaResults[0];
+        const description = manga.description ? 
+            (manga.description.length > 300 ? 
+                manga.description.substring(0, 300) + '...' : 
+                manga.description) : 
+            'No description available.';
+
+        const embed = new EmbedBuilder()
+            .setColor('#FF6B6B')
+            .setTitle(`📚 ${manga.title.romaji}`)
+            .setDescription(description)
+            .setThumbnail(manga.coverImage?.large || 'https://cdn-icons-png.flaticon.com/512/906/906175.png')
+            .addFields([
+                { 
+                    name: '📊 Rating', 
+                    value: manga.averageScore ? `${manga.averageScore}/100` : 'N/A', 
+                    inline: true 
+                },
+                { 
+                    name: '📖 Chapters', 
+                    value: manga.chapters ? manga.chapters.toString() : 'Ongoing', 
+                    inline: true 
+                },
+                { 
+                    name: '📚 Volumes', 
+                    value: manga.volumes ? manga.volumes.toString() : 'N/A', 
+                    inline: true 
+                },
+                { 
+                    name: '🟢 Status', 
+                    value: manga.status || 'Unknown', 
+                    inline: true 
+                }
+            ])
+            .setFooter({ text: 'OtakuPulse • AniList API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
+            .setTimestamp()
+            .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
+
+        await interaction.editReply({ embeds: [embed] });
+    } else {
+        // Show list view for multiple results or popular manga
+        const embed = new EmbedBuilder()
+            .setColor('#FF6B6B')
+            .setTitle(embedTitle)
+            .setDescription(embedDescription)
+            .setFooter({ text: 'OtakuPulse • AniList API', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
+            .setTimestamp()
+            .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
+
+        // Add manga fields (limit to 10 for readability)
+        mangaResults.slice(0, 10).forEach((manga, index) => {
+            embed.addFields([{
+                name: `${index + 1}. ${manga.title.romaji}`,
+                value: `⭐ **Score:** ${manga.averageScore || 'N/A'}\n📖 **Chapters:** ${manga.chapters || 'Ongoing'}\n🟢 **Status:** ${manga.status || 'Unknown'}`,
+                inline: true
+            }]);
+        });
+
+        if (mangaResults[0]?.coverImage?.large) {
+            embed.setThumbnail(mangaResults[0].coverImage.large);
+        }
+
+        await interaction.editReply({ embeds: [embed] });
+    }
+}
+
 async function handleSettings(interaction) {
     const guildId = interaction.guildId;
     const settings = await getGuildSettings(guildId);
@@ -602,7 +784,8 @@ async function handleSettings(interaction) {
             { name: 'Airing Alerts', value: settings.airing_alerts ? '✅ Enabled' : '❌ Disabled', inline: true },
             { name: 'Trailer Notifications', value: settings.trailer_notifications ? '✅ Enabled' : '❌ Disabled', inline: true },
             { name: 'Top Anime Rankings', value: settings.top_anime_rankings ? '✅ Enabled' : '❌ Disabled', inline: true },
-            { name: 'Anime Search', value: settings.anime_search ? '✅ Enabled' : '❌ Disabled', inline: true }
+            { name: 'Anime Search', value: settings.anime_search ? '✅ Enabled' : '❌ Disabled', inline: true },
+            { name: 'Manga Updates', value: settings.manga_updates ? '✅ Enabled' : '❌ Disabled', inline: true }
         )
         .setFooter({ text: 'OtakuPulse • Server Settings', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
         .setTimestamp()
@@ -623,6 +806,7 @@ async function handleHelp(interaction) {
             { name: '/top-anime', value: 'Show top-rated anime', inline: false },
             { name: '/search <query>', value: 'Search for anime', inline: false },
             { name: '/trailer <anime>', value: 'Get anime trailer', inline: false },
+            { name: '/manga [query]', value: 'Search for manga or show popular manga (optional query)', inline: false },
             { name: '/settings', value: 'View server settings (Admin only)', inline: false },
             { name: '/help', value: 'Show this help message', inline: false }
         )
@@ -729,6 +913,12 @@ function startScheduledTasks() {
     cron.schedule('0 10 * * 0', async () => {
         console.log('Sending weekly top anime...');
         await sendWeeklyTopAnime();
+    });
+    
+    // Check for manga updates every 4 hours
+    cron.schedule('0 */4 * * *', async () => {
+        console.log('Checking for manga updates...');
+        await checkMangaUpdates();
     });
 }
 
@@ -840,6 +1030,102 @@ async function sendWeeklyTopAnime() {
         } catch (error) {
             console.error(`Error sending weekly top anime to guild ${guild.id}:`, error);
         }
+    }
+}
+
+async function checkMangaUpdates() {
+    try {
+        const recentManga = await AnimeAPI.getRecentlyUpdatedManga();
+        
+        if (!recentManga || recentManga.length === 0) {
+            console.log('No recent manga updates found');
+            return;
+        }
+        
+        const botGuilds = Array.from(client.guilds.cache.values());
+        for (const guild of botGuilds) {
+            const settings = await getGuildSettings(guild.id);
+            if (!settings || !settings.manga_updates) continue;
+            
+            try {
+                const channelId = settings.manga_updates_channel || settings.notification_channel;
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel) continue;
+                
+                // Check for new/interesting manga to notify about
+                const notifyManga = [];
+                for (const manga of recentManga.slice(0, 3)) {
+                    const mangaId = manga.id.toString();
+                    const chapterId = `${mangaId}-${Date.now()}`;
+                    
+                    // Check if we already notified about this manga recently (within 24 hours)
+                    const alreadyNotified = await isMangaUpdateNotified(mangaId, chapterId);
+                    if (!alreadyNotified) {
+                        notifyManga.push(manga);
+                        // Record that we're notifying about this manga
+                        await recordMangaUpdate(
+                            mangaId, 
+                            chapterId, 
+                            manga.title?.romaji || 'Unknown Manga', 
+                            'Recent Update', 
+                            'Latest'
+                        );
+                    }
+                }
+                
+                if (notifyManga.length > 0) {
+                    for (const manga of notifyManga) {
+                        const description = manga.description ? 
+                            (manga.description.length > 200 ? 
+                                manga.description.substring(0, 200) + '...' : 
+                                manga.description) : 
+                            'Recently updated manga worth checking out!';
+                        
+                        const embed = new EmbedBuilder()
+                            .setTitle('📚 Manga Update')
+                            .setDescription(`**${manga.title?.romaji || 'Unknown Manga'}** has been updated!`)
+                            .addFields([
+                                { 
+                                    name: '📖 Details', 
+                                    value: description, 
+                                    inline: false 
+                                },
+                                { 
+                                    name: '📊 Rating', 
+                                    value: manga.averageScore ? `${manga.averageScore}/100` : 'N/A', 
+                                    inline: true 
+                                },
+                                { 
+                                    name: '📚 Chapters', 
+                                    value: manga.chapters ? manga.chapters.toString() : 'Ongoing', 
+                                    inline: true 
+                                },
+                                { 
+                                    name: '🟢 Status', 
+                                    value: manga.status || 'Unknown', 
+                                    inline: true 
+                                }
+                            ])
+                            .setColor('#FF6B6B')
+                            .setTimestamp()
+                            .setFooter({ text: 'OtakuPulse • Manga Updates' });
+                            
+                        if (manga.coverImage?.large) {
+                            embed.setThumbnail(manga.coverImage.large);
+                        }
+                        
+                        await channel.send({ embeds: [embed] });
+                        
+                        // Small delay between messages to avoid rate limiting
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                }
+            } catch (error) {
+                console.error(`Error sending manga updates to guild ${guild.id}:`, error);
+            }
+        }
+    } catch (error) {
+        console.error('Error in checkMangaUpdates:', error);
     }
 }
 
@@ -1203,7 +1489,7 @@ app.get('/dashboard', async (req, res) => {
         ${botGuilds.length === 0 ? `<div class="no-servers">The bot is not in any servers.</div>` : botGuilds.map(guild => {
             const settings = settingsMap.get(guild.id) || {};
             const guildObj = client.guilds.cache.get(guild.id);
-            let channelDropdowns = { dailyQuotes: '', airingAlerts: '', trailerNotifications: '', topAnimeRankings: '', animeSearch: '' };
+            let channelDropdowns = { dailyQuotes: '', airingAlerts: '', trailerNotifications: '', topAnimeRankings: '', animeSearch: '', mangaUpdates: '' };
             if (guildObj) {
                 const textChannels = guildObj.channels.cache.filter(ch => ch.type === 0); // 0 = GuildText
                 const options = Array.from(textChannels.values()).map(ch => ch);
@@ -1212,9 +1498,10 @@ app.get('/dashboard', async (req, res) => {
                 channelDropdowns.trailerNotifications = options.map(ch => `<option value="${ch.id}" ${(settings.trailer_notifications_channel === ch.id) ? 'selected' : ''}>#${ch.name}</option>`).join('');
                 channelDropdowns.topAnimeRankings = options.map(ch => `<option value="${ch.id}" ${(settings.top_anime_rankings_channel === ch.id) ? 'selected' : ''}>#${ch.name}</option>`).join('');
                 channelDropdowns.animeSearch = options.map(ch => `<option value="${ch.id}" ${(settings.anime_search_channel === ch.id) ? 'selected' : ''}>#${ch.name}</option>`).join('');
+                channelDropdowns.mangaUpdates = options.map(ch => `<option value="${ch.id}" ${(settings.manga_updates_channel === ch.id) ? 'selected' : ''}>#${ch.name}</option>`).join('');
             }
             // Fallback for notification_channel: use first selected channel or first available
-            let fallbackChannel = settings.daily_quotes_channel || settings.airing_alerts_channel || settings.trailer_notifications_channel || settings.top_anime_rankings_channel || settings.anime_search_channel;
+            let fallbackChannel = settings.daily_quotes_channel || settings.airing_alerts_channel || settings.trailer_notifications_channel || settings.top_anime_rankings_channel || settings.anime_search_channel || settings.manga_updates_channel;
             if (!fallbackChannel && guildObj) {
                 const textChannels = guildObj.channels.cache.filter(ch => ch.type === 0);
                 fallbackChannel = textChannels.size > 0 ? Array.from(textChannels.values())[0].id : null;
@@ -1251,11 +1538,17 @@ app.get('/dashboard', async (req, res) => {
                             <select name="animeSearchChannel">${channelDropdowns.animeSearch}</select>
                         </label>
                     </div>
+                    <div class="channel-group">
+                        <label>📚 Manga Updates Channel:
+                            <select name="mangaUpdatesChannel">${channelDropdowns.mangaUpdates}</select>
+                        </label>
+                    </div>
                     <label><input type="checkbox" name="airingAlerts" ${settings.airing_alerts ? 'checked' : ''}/> 📺 Real-time Anime Updates</label>
                     <label><input type="checkbox" name="trailerNotifications" ${settings.trailer_notifications ? 'checked' : ''}/> 🎬 Latest Trailers</label>
                     <label><input type="checkbox" name="dailyQuotes" ${settings.daily_quotes ? 'checked' : ''}/> 🎌 Daily Anime Quotes</label>
                     <label><input type="checkbox" name="topAnimeRankings" ${settings.top_anime_rankings ? 'checked' : ''}/> 🏆 Top Anime Rankings</label>
                     <label><input type="checkbox" name="animeSearch" ${settings.anime_search ? 'checked' : ''}/> 🔍 Anime Search</label>
+                    <label><input type="checkbox" name="mangaUpdates" ${settings.manga_updates ? 'checked' : ''}/> 📚 Manga Updates</label>
                     <button class="btn" type="submit">Save Features</button>
                 </form>
             </div>
@@ -1598,6 +1891,20 @@ app.get('/features', (req, res) => {
                 </ul>
               </div>
             </div>
+            
+            <div class="feature-card">
+              <span class="feature-icon">📚</span>
+              <h3 class="feature-title">Real-time Manga Updates</h3>
+              <p class="feature-description">Stay updated with the latest manga releases and chapter updates from your favorite series with automated notifications.</p>
+              <div class="feature-benefits">
+                <ul>
+                  <li>Automatic chapter notifications</li>
+                  <li>Popular manga tracking</li>
+                  <li>Comprehensive manga search</li>
+                  <li>Detailed manga information</li>
+                </ul>
+              </div>
+            </div>
           </div>
           
           <div class="cta-section">
@@ -1897,6 +2204,7 @@ app.get('/getting-started', (req, res) => {
                   <li><code>/quote</code> - Get a random anime quote</li>
                   <li><code>/airing</code> - See currently airing anime</li>
                   <li><code>/search attack on titan</code> - Search for anime</li>
+                  <li><code>/manga</code> - Browse popular manga</li>
                   <li><code>/help</code> - View all available commands</li>
                 </ul>
               </div>
@@ -2282,6 +2590,25 @@ app.get('/commands', (req, res) => {
                   <div class="example">/trailer "spirited away"</div>
                   <div class="example">/trailer one piece</div>
                   <div class="example">/trailer "your name"</div>
+                </div>
+              </div>
+              
+              <div class="command-card">
+                <div class="command-header">
+                  <span class="command-icon">📚</span>
+                  <h3 class="command-name">/manga</h3>
+                </div>
+                <p class="command-description">Search for manga series and get detailed information, or browse popular manga when no search term is provided.</p>
+                <div class="command-usage">
+                  <div class="command-usage-title">Usage</div>
+                  <div class="command-usage-text">/manga [query]</div>
+                </div>
+                <div class="command-examples">
+                  <div class="command-examples-title">Examples</div>
+                  <div class="example">/manga</div>
+                  <div class="example">/manga "one piece"</div>
+                  <div class="example">/manga attack on titan</div>
+                  <div class="example">/manga demon slayer</div>
                 </div>
               </div>
             </div>
