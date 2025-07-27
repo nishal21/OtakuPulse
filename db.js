@@ -18,11 +18,27 @@ async function ensureGuildSettingsTable() {
             trailer_notifications_channel VARCHAR(32),
             top_anime_rankings_channel VARCHAR(32),
             anime_search_channel VARCHAR(32),
+            manga_updates_channel VARCHAR(32),
             daily_quotes BOOLEAN,
             airing_alerts BOOLEAN,
             trailer_notifications BOOLEAN,
             top_anime_rankings BOOLEAN,
-            anime_search BOOLEAN
+            anime_search BOOLEAN,
+            manga_updates BOOLEAN
+        );
+    `);
+    
+    // Create manga updates tracking table
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS manga_updates (
+            id SERIAL PRIMARY KEY,
+            manga_id VARCHAR(100),
+            chapter_id VARCHAR(100),
+            title VARCHAR(500),
+            chapter_title VARCHAR(500),
+            chapter_number VARCHAR(50),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(manga_id, chapter_id)
         );
     `);
 }
@@ -37,10 +53,10 @@ async function getGuildSettings(guildId) {
 async function setGuildSettings(guildId, settings) {
     await pool.query(`
         INSERT INTO guild_settings (
-            guild_id, notification_channel, daily_quotes_channel, airing_alerts_channel, trailer_notifications_channel, top_anime_rankings_channel, anime_search_channel,
-            daily_quotes, airing_alerts, trailer_notifications, top_anime_rankings, anime_search
+            guild_id, notification_channel, daily_quotes_channel, airing_alerts_channel, trailer_notifications_channel, top_anime_rankings_channel, anime_search_channel, manga_updates_channel,
+            daily_quotes, airing_alerts, trailer_notifications, top_anime_rankings, anime_search, manga_updates
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
         )
         ON CONFLICT (guild_id) DO UPDATE SET
             notification_channel = EXCLUDED.notification_channel,
@@ -49,11 +65,13 @@ async function setGuildSettings(guildId, settings) {
             trailer_notifications_channel = EXCLUDED.trailer_notifications_channel,
             top_anime_rankings_channel = EXCLUDED.top_anime_rankings_channel,
             anime_search_channel = EXCLUDED.anime_search_channel,
+            manga_updates_channel = EXCLUDED.manga_updates_channel,
             daily_quotes = EXCLUDED.daily_quotes,
             airing_alerts = EXCLUDED.airing_alerts,
             trailer_notifications = EXCLUDED.trailer_notifications,
             top_anime_rankings = EXCLUDED.top_anime_rankings,
-            anime_search = EXCLUDED.anime_search;
+            anime_search = EXCLUDED.anime_search,
+            manga_updates = EXCLUDED.manga_updates;
     `, [
         guildId,
         settings.notification_channel,
@@ -62,17 +80,39 @@ async function setGuildSettings(guildId, settings) {
         settings.trailer_notifications_channel,
         settings.top_anime_rankings_channel,
         settings.anime_search_channel,
+        settings.manga_updates_channel,
         settings.daily_quotes,
         settings.airing_alerts,
         settings.trailer_notifications,
         settings.top_anime_rankings,
-        settings.anime_search
+        settings.anime_search,
+        settings.manga_updates
     ]);
+}
+
+// Check if manga update has been notified
+async function isMangaUpdateNotified(mangaId, chapterId) {
+    const { rows } = await pool.query(
+        'SELECT id FROM manga_updates WHERE manga_id = $1 AND chapter_id = $2',
+        [mangaId, chapterId]
+    );
+    return rows.length > 0;
+}
+
+// Record manga update notification
+async function recordMangaUpdate(mangaId, chapterId, title, chapterTitle, chapterNumber) {
+    await pool.query(`
+        INSERT INTO manga_updates (manga_id, chapter_id, title, chapter_title, chapter_number)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (manga_id, chapter_id) DO NOTHING
+    `, [mangaId, chapterId, title, chapterTitle, chapterNumber]);
 }
 
 module.exports = {
     pool,
     ensureGuildSettingsTable,
     getGuildSettings,
-    setGuildSettings
+    setGuildSettings,
+    isMangaUpdateNotified,
+    recordMangaUpdate
 };
