@@ -34,7 +34,7 @@ app.use(session({
 
 
 // Neon DB integration
-const { ensureGuildSettingsTable, getGuildSettings, setGuildSettings, isMangaUpdateNotified, recordMangaUpdate } = require('./db');
+const { ensureGuildSettingsTable, getGuildSettings, setGuildSettings, isMangaUpdateNotified, recordMangaUpdate, isTrailerNotified, recordTrailerNotification } = require('./db');
 
 // Ensure DB table exists at startup
 ensureGuildSettingsTable().catch(console.error);
@@ -221,6 +221,7 @@ class AnimeAPI {
             await rateLimit('animechan');
             let url;
             if (anime) {
+                // Try to get quotes from specific anime
                 url = `${ANIMECHAN_API_BASE}/quotes/anime?title=${encodeURIComponent(anime)}`;
                 try {
                     const response = await axios.get(url);
@@ -230,6 +231,7 @@ class AnimeAPI {
                         return response.data[randomIndex];
                     } else {
                         console.warn(`No quote found for anime: ${anime}. Falling back to random quote.`);
+                        // Fallback to random quote
                         url = `${ANIMECHAN_API_BASE}/random`;
                         const randomResponse = await axios.get(url);
                         if (randomResponse.data && randomResponse.data.quote) {
@@ -253,6 +255,7 @@ class AnimeAPI {
                     return null;
                 }
             } else {
+                // Get random quote
                 url = `${ANIMECHAN_API_BASE}/random`;
                 const response = await axios.get(url);
                 if (response.data && response.data.quote) {
@@ -268,8 +271,13 @@ class AnimeAPI {
                 { quote: "To know sorrow is not terrifying. What is terrifying is to know you can't go back to happiness you could have.", anime: "Bleach", character: "Matsumoto Rangiku" },
                 { quote: "No one knows what the future holds. That's why its potential is infinite.", anime: "Steins;Gate", character: "Rintarou Okabe" },
                 { quote: "It's not the face that makes someone a monster; it's the choices they make with their lives.", anime: "Naruto", character: "Naruto Uzumaki" },
-                { quote: "People's lives don't end when they die. It ends when they lose faith.", anime: "Itachi Uchiha", character: "Naruto" },
-                { quote: "Hard work is absolutely necessary, but in the end, ability decides everything.", anime: "Madara Uchiha", character: "Naruto" }
+                { quote: "People's lives don't end when they die. It ends when they lose faith.", anime: "Naruto", character: "Itachi Uchiha" },
+                { quote: "Hard work is absolutely necessary, but in the end, ability decides everything.", anime: "Naruto", character: "Madara Uchiha" },
+                { quote: "The world isn't perfect. But it's there for us, doing the best it can. And that's what makes it so damn beautiful.", anime: "Fullmetal Alchemist", character: "Roy Mustang" },
+                { quote: "I'm not going there to die. I'm going to find out if I'm really alive.", anime: "Cowboy Bebop", character: "Spike Spiegel" },
+                { quote: "Even if we forget the faces of our friends, we will never forget the bonds that were carved into our souls.", anime: "Sword Art Online", character: "Kirito" },
+                { quote: "If you don't take risks, you can't create a future.", anime: "One Piece", character: "Monkey D. Luffy" },
+                { quote: "Power comes in response to a need, not a desire.", anime: "Dragon Ball Z", character: "Goku" }
             ];
             return fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
         }
@@ -343,6 +351,101 @@ class AnimeAPI {
         `;
         const data = await queryAniList(queryGraphQL, { perPage: 10 });
         return data?.Page?.media || [];
+    }
+
+    // Get latest anime with trailers
+    static async getLatestAnimeWithTrailers() {
+        await rateLimit('anilist');
+        const query = `
+            query ($perPage: Int, $season: MediaSeason, $seasonYear: Int) {
+                Page(perPage: $perPage) {
+                    media(type: ANIME, sort: [TRENDING_DESC, POPULARITY_DESC], season: $season, seasonYear: $seasonYear) {
+                        id
+                        title { romaji }
+                        coverImage { large }
+                        description(asHtml: false)
+                        episodes
+                        averageScore
+                        status
+                        format
+                        genres
+                        trailer {
+                            id
+                            site
+                            thumbnail
+                        }
+                        studios {
+                            nodes {
+                                name
+                            }
+                        }
+                    }
+                }
+            }
+        `;
+        const currentSeason = this.getCurrentSeason();
+        const data = await queryAniList(query, { 
+            perPage: 15, 
+            season: currentSeason.season, 
+            seasonYear: currentSeason.year 
+        });
+        // Filter to only include anime with trailers
+        return data?.Page?.media?.filter(anime => anime.trailer && anime.trailer.site === 'youtube') || [];
+    }
+
+    // Get trending anime with trailers (alternative source)
+    static async getTrendingAnimeWithTrailers() {
+        await rateLimit('anilist');
+        const query = `
+            query ($perPage: Int) {
+                Page(perPage: $perPage) {
+                    media(type: ANIME, sort: TRENDING_DESC, status_in: [RELEASING, FINISHED, NOT_YET_RELEASED]) {
+                        id
+                        title { romaji }
+                        coverImage { large }
+                        description(asHtml: false)
+                        episodes
+                        averageScore
+                        status
+                        format
+                        genres
+                        trailer {
+                            id
+                            site
+                            thumbnail
+                        }
+                        studios {
+                            nodes {
+                                name
+                            }
+                        }
+                    }
+                }
+            }
+        `;
+        const data = await queryAniList(query, { perPage: 20 });
+        // Filter to only include anime with trailers
+        return data?.Page?.media?.filter(anime => anime.trailer && anime.trailer.site === 'youtube') || [];
+    }
+
+    // Helper function to get current season
+    static getCurrentSeason() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1; // getMonth() returns 0-11
+        
+        let season;
+        if (month >= 1 && month <= 3) {
+            season = 'WINTER';
+        } else if (month >= 4 && month <= 6) {
+            season = 'SPRING';
+        } else if (month >= 7 && month <= 9) {
+            season = 'SUMMER';
+        } else {
+            season = 'FALL';
+        }
+        
+        return { season, year };
     }
 
     // Get popular releasing manga
@@ -539,14 +642,22 @@ async function handleSetup(interaction) {
 async function handleQuote(interaction) {
     const anime = interaction.options.getString('anime');
     const quote = await AnimeAPI.getAnimeQuote(anime);
+    
     if (!quote) {
         await interaction.editReply('Could not fetch anime quote at this time. Please try again later.');
         return;
     }
+    
+    // Determine if this was a specific anime search or random
+    const isSpecificSearch = anime && anime.trim().length > 0;
+    const title = isSpecificSearch ? 
+        `🎌 ${anime} Quote` : 
+        '🎌 Random Anime Quote';
+    
     // Professional embed styling
     const embed = new EmbedBuilder()
         .setColor('#7f00ff')
-        .setTitle('🎌 Anime Quote')
+        .setTitle(title)
         .setDescription(`> "${quote.quote || quote.content}"`)
         .addFields(
             { name: 'Character', value: `🎭 ${quote.character || 'Unknown'}`, inline: true },
@@ -556,6 +667,15 @@ async function handleQuote(interaction) {
         .setTimestamp()
         .setThumbnail('https://animechan.vercel.app/assets/logo.png')
         .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
+    
+    // Add a note if the requested anime wasn't found but we showed a random quote
+    if (isSpecificSearch && quote.anime && !quote.anime.toLowerCase().includes(anime.toLowerCase())) {
+        embed.setFooter({ 
+            text: `No quotes found for "${anime}". Showing random quote instead • OtakuPulse`, 
+            iconURL: 'https://animechan.vercel.app/assets/logo.png' 
+        });
+    }
+    
     await interaction.editReply({ embeds: [embed] });
 }
 
@@ -856,7 +976,14 @@ function startScheduledTasks() {
                     const fallbackQuotes = [
                         { quote: "To know sorrow is not terrifying. What is terrifying is to know you can't go back to happiness you could have.", anime: "Bleach", character: "Matsumoto Rangiku" },
                         { quote: "No one knows what the future holds. That's why its potential is infinite.", anime: "Steins;Gate", character: "Rintarou Okabe" },
-                        { quote: "It's not the face that makes someone a monster; it's the choices they make with their lives.", anime: "Naruto", character: "Naruto Uzumaki" }
+                        { quote: "It's not the face that makes someone a monster; it's the choices they make with their lives.", anime: "Naruto", character: "Naruto Uzumaki" },
+                        { quote: "People's lives don't end when they die. It ends when they lose faith.", anime: "Naruto", character: "Itachi Uchiha" },
+                        { quote: "Hard work is absolutely necessary, but in the end, ability decides everything.", anime: "Naruto", character: "Madara Uchiha" },
+                        { quote: "The world isn't perfect. But it's there for us, doing the best it can. And that's what makes it so damn beautiful.", anime: "Fullmetal Alchemist", character: "Roy Mustang" },
+                        { quote: "I'm not going there to die. I'm going to find out if I'm really alive.", anime: "Cowboy Bebop", character: "Spike Spiegel" },
+                        { quote: "Even if we forget the faces of our friends, we will never forget the bonds that were carved into our souls.", anime: "Sword Art Online", character: "Kirito" },
+                        { quote: "If you don't take risks, you can't create a future.", anime: "One Piece", character: "Monkey D. Luffy" },
+                        { quote: "Power comes in response to a need, not a desire.", anime: "Dragon Ball Z", character: "Goku" }
                     ];
                     quote = fallbackQuotes[Math.floor(Math.random() * fallbackQuotes.length)];
                     startScheduledTasks.lastQuote = quote;
@@ -919,6 +1046,12 @@ function startScheduledTasks() {
     cron.schedule('0 */4 * * *', async () => {
         console.log('Checking for manga updates...');
         await checkMangaUpdates();
+    });
+    
+    // Send latest anime trailers every 8 hours
+    cron.schedule('0 */8 * * *', async () => {
+        console.log('Sending latest anime trailers...');
+        await sendLatestTrailers();
     });
 }
 
@@ -1126,6 +1259,128 @@ async function checkMangaUpdates() {
         }
     } catch (error) {
         console.error('Error in checkMangaUpdates:', error);
+    }
+}
+
+// Send latest anime trailers
+async function sendLatestTrailers() {
+    try {
+        // Try to get latest anime with trailers from current season
+        let latestAnime = await AnimeAPI.getLatestAnimeWithTrailers();
+        
+        // If no current season anime with trailers, get trending anime with trailers
+        if (!latestAnime || latestAnime.length === 0) {
+            latestAnime = await AnimeAPI.getTrendingAnimeWithTrailers();
+        }
+        
+        if (!latestAnime || latestAnime.length === 0) {
+            console.log('No anime with trailers found for notifications');
+            return;
+        }
+        
+        const botGuilds = Array.from(client.guilds.cache.values());
+        for (const guild of botGuilds) {
+            const settings = await getGuildSettings(guild.id);
+            if (!settings || !settings.trailer_notifications) continue;
+            
+            try {
+                const channelId = settings.trailer_notifications_channel || settings.notification_channel;
+                const channel = guild.channels.cache.get(channelId);
+                if (!channel) continue;
+                
+                // Select 1-3 random anime with trailers for notification
+                const notifyAnime = [];
+                
+                // Check each anime for new trailers (not previously notified)
+                for (const anime of latestAnime.slice(0, 10)) { // Check first 10 anime
+                    const animeId = anime.id.toString();
+                    const trailerId = anime.trailer.id;
+                    
+                    // Check if we already notified about this trailer
+                    const alreadyNotified = await isTrailerNotified(animeId, trailerId);
+                    if (!alreadyNotified) {
+                        notifyAnime.push(anime);
+                        // Record that we're notifying about this trailer
+                        await recordTrailerNotification(
+                            animeId, 
+                            trailerId, 
+                            anime.title?.romaji || 'Unknown Anime'
+                        );
+                        
+                        // Limit to 2 trailers per notification cycle
+                        if (notifyAnime.length >= 2) break;
+                    }
+                }
+                
+                if (notifyAnime.length === 0) continue;
+                
+                for (const anime of notifyAnime) {
+                    const description = anime.description ? 
+                        (anime.description.length > 200 ? 
+                            anime.description.substring(0, 200) + '...' : 
+                            anime.description) : 
+                        'Check out this awesome anime trailer!';
+                    
+                    const trailerUrl = anime.trailer.site === 'youtube' 
+                        ? `https://www.youtube.com/watch?v=${anime.trailer.id}`
+                        : null;
+                    
+                    if (!trailerUrl) continue;
+                    
+                    const embed = new EmbedBuilder()
+                        .setTitle('🎬 Latest Anime Trailer')
+                        .setDescription(`**${anime.title?.romaji || 'Unknown Anime'}** - Official Trailer`)
+                        .addFields([
+                            { 
+                                name: '📖 Synopsis', 
+                                value: description, 
+                                inline: false 
+                            },
+                            { 
+                                name: '📊 Rating', 
+                                value: anime.averageScore ? `${anime.averageScore}/100` : 'N/A', 
+                                inline: true 
+                            },
+                            { 
+                                name: '📺 Episodes', 
+                                value: anime.episodes ? anime.episodes.toString() : 'TBA', 
+                                inline: true 
+                            },
+                            { 
+                                name: '🟢 Status', 
+                                value: anime.status || 'Unknown', 
+                                inline: true 
+                            },
+                            {
+                                name: '🎥 Watch Trailer',
+                                value: `[Click here to watch](${trailerUrl})`,
+                                inline: false
+                            }
+                        ])
+                        .setColor('#FF7675')
+                        .setTimestamp()
+                        .setFooter({ text: 'OtakuPulse • Latest Trailers' })
+                        .setURL(trailerUrl);
+                        
+                    if (anime.coverImage?.large) {
+                        embed.setThumbnail(anime.coverImage.large);
+                    }
+                    
+                    if (anime.trailer.thumbnail) {
+                        embed.setImage(anime.trailer.thumbnail);
+                    }
+                    
+                    await channel.send({ embeds: [embed] });
+                    
+                    // Small delay between messages to avoid rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            } catch (error) {
+                console.error(`Error sending trailer updates to guild ${guild.id}:`, error);
+            }
+        }
+    } catch (error) {
+        console.error('Error in sendLatestTrailers:', error);
     }
 }
 
