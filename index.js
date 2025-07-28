@@ -220,49 +220,33 @@ class AnimeAPI {
         try {
             await rateLimit('animechan');
             let url;
+            let quoteObj = null;
             if (anime) {
-                // Try to get quotes from specific anime using new API
                 url = `${ANIMECHAN_API_BASE}/quotes/random?anime=${encodeURIComponent(anime)}`;
-                try {
-                    const response = await axios.get(url);
-                    if (response.data && response.data.data) {
-                        // New API returns data in response.data.data format
-                        return response.data.data;
-                    } else {
-                        console.warn(`No quote found for anime: ${anime}. Falling back to random quote.`);
-                        // Fallback to random quote
-                        url = `${ANIMECHAN_API_BASE}/quotes/random`;
-                        const randomResponse = await axios.get(url);
-                        if (randomResponse.data && randomResponse.data.data) {
-                            return randomResponse.data.data;
-                        } else {
-                            return null;
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Error fetching quote for anime: ${anime}:`, err.message);
-                    // Fallback to random quote
-                    url = `${ANIMECHAN_API_BASE}/quotes/random`;
-                    try {
-                        const randomResponse = await axios.get(url);
-                        if (randomResponse.data && randomResponse.data.data) {
-                            return randomResponse.data.data;
-                        }
-                    } catch (fallbackErr) {
-                        console.error('Error fetching fallback random quote:', fallbackErr.message);
-                    }
-                    return null;
-                }
             } else {
-                // Get random quote using new API
                 url = `${ANIMECHAN_API_BASE}/quotes/random`;
-                const response = await axios.get(url);
-                if (response.data && response.data.data) {
-                    return response.data.data;
+            }
+            const response = await axios.get(url);
+            // API always returns an object with keys: anime, character, quote
+            if (response.data) {
+                // If response.data is an array, take the first element
+                if (Array.isArray(response.data)) {
+                    quoteObj = response.data[0];
+                } else if (response.data.data) {
+                    // Some endpoints return { data: { ... } }
+                    quoteObj = response.data.data;
                 } else {
-                    return null;
+                    quoteObj = response.data;
                 }
             }
+            if (quoteObj && typeof quoteObj === 'object') {
+                return {
+                    quote: String(quoteObj.quote),
+                    anime: String(quoteObj.anime),
+                    character: String(quoteObj.character)
+                };
+            }
+            return null;
         } catch (error) {
             console.error('Error fetching anime quote:', error.message);
             // Return fallback quote if all API calls fail
