@@ -41,6 +41,18 @@ async function ensureGuildSettingsTable() {
             UNIQUE(manga_id, chapter_id)
         );
     `);
+    
+    // Create trailer notifications tracking table
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS trailer_notifications (
+            id SERIAL PRIMARY KEY,
+            anime_id VARCHAR(100),
+            trailer_id VARCHAR(100),
+            title VARCHAR(500),
+            notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(anime_id, trailer_id)
+        );
+    `);
 }
 
 // Get settings for a guild
@@ -108,11 +120,31 @@ async function recordMangaUpdate(mangaId, chapterId, title, chapterTitle, chapte
     `, [mangaId, chapterId, title, chapterTitle, chapterNumber]);
 }
 
+// Check if trailer has been notified
+async function isTrailerNotified(animeId, trailerId) {
+    const { rows } = await pool.query(
+        'SELECT id FROM trailer_notifications WHERE anime_id = $1 AND trailer_id = $2',
+        [animeId, trailerId]
+    );
+    return rows.length > 0;
+}
+
+// Record trailer notification
+async function recordTrailerNotification(animeId, trailerId, title) {
+    await pool.query(`
+        INSERT INTO trailer_notifications (anime_id, trailer_id, title)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (anime_id, trailer_id) DO NOTHING
+    `, [animeId, trailerId, title]);
+}
+
 module.exports = {
     pool,
     ensureGuildSettingsTable,
     getGuildSettings,
     setGuildSettings,
     isMangaUpdateNotified,
-    recordMangaUpdate
+    recordMangaUpdate,
+    isTrailerNotified,
+    recordTrailerNotification
 };
