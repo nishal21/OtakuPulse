@@ -56,7 +56,7 @@ async function getAllGuildSettings() {
 
 // API Configuration
 const ANILIST_API = 'https://graphql.anilist.co';
-const ANIMECHAN_API_BASE = 'https://animechan.vercel.app/api';
+const ANIMECHAN_API_BASE = 'https://api.animechan.io/v1';
 const QUOTES_API_BASE = 'https://api.api-ninjas.com/v1/quotes';
 
 // Rate limiting for API calls
@@ -221,21 +221,20 @@ class AnimeAPI {
             await rateLimit('animechan');
             let url;
             if (anime) {
-                // Try to get quotes from specific anime
-                url = `${ANIMECHAN_API_BASE}/quotes/anime?title=${encodeURIComponent(anime)}`;
+                // Try to get quotes from specific anime using new API
+                url = `${ANIMECHAN_API_BASE}/quotes/random?anime=${encodeURIComponent(anime)}`;
                 try {
                     const response = await axios.get(url);
-                    if (response.data && Array.isArray(response.data) && response.data.length > 0) {
-                        // Return random quote from the array
-                        const randomIndex = Math.floor(Math.random() * response.data.length);
-                        return response.data[randomIndex];
+                    if (response.data && response.data.data) {
+                        // New API returns data in response.data.data format
+                        return response.data.data;
                     } else {
                         console.warn(`No quote found for anime: ${anime}. Falling back to random quote.`);
                         // Fallback to random quote
-                        url = `${ANIMECHAN_API_BASE}/random`;
+                        url = `${ANIMECHAN_API_BASE}/quotes/random`;
                         const randomResponse = await axios.get(url);
-                        if (randomResponse.data && randomResponse.data.quote) {
-                            return randomResponse.data;
+                        if (randomResponse.data && randomResponse.data.data) {
+                            return randomResponse.data.data;
                         } else {
                             return null;
                         }
@@ -243,11 +242,11 @@ class AnimeAPI {
                 } catch (err) {
                     console.error(`Error fetching quote for anime: ${anime}:`, err.message);
                     // Fallback to random quote
-                    url = `${ANIMECHAN_API_BASE}/random`;
+                    url = `${ANIMECHAN_API_BASE}/quotes/random`;
                     try {
                         const randomResponse = await axios.get(url);
-                        if (randomResponse.data && randomResponse.data.quote) {
-                            return randomResponse.data;
+                        if (randomResponse.data && randomResponse.data.data) {
+                            return randomResponse.data.data;
                         }
                     } catch (fallbackErr) {
                         console.error('Error fetching fallback random quote:', fallbackErr.message);
@@ -255,11 +254,11 @@ class AnimeAPI {
                     return null;
                 }
             } else {
-                // Get random quote
-                url = `${ANIMECHAN_API_BASE}/random`;
+                // Get random quote using new API
+                url = `${ANIMECHAN_API_BASE}/quotes/random`;
                 const response = await axios.get(url);
-                if (response.data && response.data.quote) {
-                    return response.data;
+                if (response.data && response.data.data) {
+                    return response.data.data;
                 } else {
                     return null;
                 }
@@ -287,14 +286,18 @@ class AnimeAPI {
     static async getInspirationalQuote() {
         try {
             await rateLimit('animechan');
-            const response = await axios.get(`${ANIMECHAN_API_BASE}/random`);
-            // Animechan returns { anime, character, quote }
-            return {
-                quote: response.data.quote,
-                author: `${response.data.character} (${response.data.anime})`
-            };
+            const response = await axios.get(`${ANIMECHAN_API_BASE}/quotes/random`);
+            // New AnimeChan.io API returns { data: { anime, character, quote } }
+            if (response.data && response.data.data) {
+                return {
+                    quote: response.data.data.quote,
+                    author: `${response.data.data.character} (${response.data.data.anime})`
+                };
+            } else {
+                throw new Error('Invalid response format');
+            }
         } catch (error) {
-            console.error('Error fetching inspirational quote from Animechan:', error.message);
+            console.error('Error fetching inspirational quote from AnimeChan:', error.message);
             // Fallback anime quotes
             const fallbackQuotes = [
                 { quote: "To know sorrow is not terrifying. What is terrifying is to know you can't go back to happiness you could have.", author: "Matsumoto Rangiku (Bleach)" },
