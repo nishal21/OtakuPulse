@@ -220,35 +220,52 @@ class AnimeAPI {
         try {
             await rateLimit('animechan');
             let url;
-            let quoteObj = null;
             if (anime) {
                 url = `${ANIMECHAN_API_BASE}/quotes/random?anime=${encodeURIComponent(anime)}`;
             } else {
                 url = `${ANIMECHAN_API_BASE}/quotes/random`;
             }
+            
             const response = await axios.get(url);
-            // API always returns an object with keys: anime, character, quote
+            console.log('AnimeChan API Response:', JSON.stringify(response.data, null, 2));
+            
+            let quoteData = null;
+            
+            // Handle different response formats from AnimeChan.io API
             if (response.data) {
-                // If response.data is an array, take the first element
                 if (Array.isArray(response.data)) {
-                    quoteObj = response.data[0];
+                    // If response is an array, take the first element
+                    quoteData = response.data[0];
                 } else if (response.data.data) {
-                    // Some endpoints return { data: { ... } }
-                    quoteObj = response.data.data;
-                } else {
-                    quoteObj = response.data;
+                    // If response has a 'data' property
+                    quoteData = response.data.data;
+                } else if (response.data.quote && response.data.anime && response.data.character) {
+                    // Direct quote object
+                    quoteData = response.data;
                 }
             }
-            if (quoteObj && typeof quoteObj === 'object') {
-                return {
-                    quote: String(quoteObj.quote),
-                    anime: String(quoteObj.anime),
-                    character: String(quoteObj.character)
+            
+            // Ensure we have valid quote data and convert everything to strings
+            if (quoteData && quoteData.quote && quoteData.anime && quoteData.character) {
+                const result = {
+                    quote: String(quoteData.quote || '').trim(),
+                    anime: String(quoteData.anime || '').trim(),
+                    character: String(quoteData.character || '').trim()
                 };
+                
+                // Validate that none of the fields are empty or invalid
+                if (result.quote && result.anime && result.character && 
+                    result.quote !== 'undefined' && result.anime !== 'undefined' && result.character !== 'undefined') {
+                    return result;
+                }
             }
-            return null;
+            
+            // If API call fails or returns invalid data, throw error to use fallback
+            throw new Error('Invalid or empty quote data from API');
+            
         } catch (error) {
-            console.error('Error fetching anime quote:', error.message);
+            console.error('Error fetching anime quote from API:', error.message);
+            
             // Return fallback quote if all API calls fail
             const fallbackQuotes = [
                 { quote: "To know sorrow is not terrifying. What is terrifying is to know you can't go back to happiness you could have.", anime: "Bleach", character: "Matsumoto Rangiku" },
