@@ -5,6 +5,26 @@ const cron = require('node-cron');
 const session = require('express-session');
 const path = require('path');
 require('dotenv').config();
+
+// Enhanced utilities and features
+const { Logger, ErrorHandler, PerformanceMonitor } = require('./utils/logger');
+const SecurityManager = require('./utils/security');
+const AIFeatures = require('./features/ai');
+const AnalyticsManager = require('./features/analytics');
+const PremiumManager = require('./features/premium');
+const AdvancedCommands = require('./commands/advanced');
+
+// Initialize enhanced utilities
+const logger = new Logger();
+const errorHandler = new ErrorHandler(logger);
+const performanceMonitor = new PerformanceMonitor(logger);
+const securityManager = new SecurityManager();
+const aiFeatures = new AIFeatures(logger);
+const analyticsManager = new AnalyticsManager(logger);
+const premiumManager = new PremiumManager(logger);
+
+logger.info('🚀 Starting OtakuPulse Discord Bot with Enhanced Features');
+
 // Initialize Discord client
 const client = new Client({
     intents: [
@@ -14,30 +34,37 @@ const client = new Client({
     ]
 });
 
-// Initialize Express app
+// Initialize Express app with security
 const app = express();
+
+// Apply security middleware
+app.use(securityManager.getHelmetOptions());
+app.use(securityManager.getCorsOptions());
+app.use(securityManager.createRateLimit());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
+
+// Enhanced session configuration
+app.use(session(securityManager.getSessionOptions()));
 
 // Wire up dashboard feature selection route (after guildSettings is declared)
 const dashboardSettingsRouter = require('./dashboard-settings');
 app.use(dashboardSettingsRouter);
 
-// Session middleware
-app.use(session({
-    secret: process.env.SESSION_SECRET || 'otakupulse-secret-key',
-    resave: false,
-    saveUninitialized: false,
-    cookie: { secure: false } // Set to true in production with HTTPS
-}));
-
+// Session middleware (already configured above)
 
 // Neon DB integration
 const { ensureGuildSettingsTable, getGuildSettings, setGuildSettings, isMangaUpdateNotified, recordMangaUpdate, isTrailerNotified, recordTrailerNotification } = require('./db');
 
 // Ensure DB table exists at startup
-ensureGuildSettingsTable().catch(console.error);
+ensureGuildSettingsTable().catch(error => {
+    logger.error('Failed to ensure database tables', error);
+});
+
+// Initialize advanced commands
+const advancedCommands = new AdvancedCommands(AnimeAPI, aiFeatures, analyticsManager, premiumManager, logger);
 
 // Helper: get all bot guild settings from DB
 async function getAllGuildSettings() {
@@ -477,8 +504,8 @@ class AnimeAPI {
     }
 }
 
-// Slash commands
-const commands = [
+// Slash commands (enhanced with new commands)
+const baseCommands = [
     new SlashCommandBuilder()
         .setName('setup')
         .setDescription('Set up OtakuPulse for this server')
@@ -543,21 +570,24 @@ const commands = [
         .setDescription('Show all available commands')
 ];
 
+// Combine base commands with advanced commands
+const commands = [...baseCommands, ...advancedCommands.getCommands()];
+
 // Discord bot event handlers
 client.once('ready', async () => {
-    console.log(`🤖 ${client.user.tag} is online!`);
+    logger.info(`🤖 ${client.user.tag} is online with enhanced features!`);
     
     // Register slash commands
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     
     try {
-        console.log('Started refreshing application (/) commands.');
+        logger.info('Started refreshing application (/) commands.');
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
             body: commands
         });
-        console.log('Successfully reloaded application (/) commands.');
+        logger.info(`Successfully reloaded ${commands.length} application (/) commands.`);
     } catch (error) {
-        console.error('Error registering commands:', error);
+        logger.error('Error registering commands', error);
     }
     
     // Start scheduled tasks
@@ -568,10 +598,27 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName, options } = interaction;
+    const startTime = Date.now();
+    const userId = interaction.user.id;
+    const guildId = interaction.guildId;
 
     try {
+        // Check rate limits for premium users
+        const rateLimit = await premiumManager.checkRateLimit(userId, guildId);
+        if (!rateLimit.allowed) {
+            const message = rateLimit.ownerOverride ? 
+                '👑 Welcome back, owner! You have unlimited access to everything!' :
+                `⏳ Rate limit exceeded. You can use ${rateLimit.remaining} more commands. Limit resets at ${rateLimit.resetTime?.toLocaleTimeString()}. Upgrade to premium for higher limits!`;
+            
+            return await interaction.reply({
+                content: message,
+                ephemeral: true
+            });
+        }
+
         await interaction.deferReply();
 
+        // Handle commands
         switch (commandName) {
             case 'setup':
                 await handleSetup(interaction);
@@ -600,12 +647,55 @@ client.on('interactionCreate', async interaction => {
             case 'help':
                 await handleHelp(interaction);
                 break;
+            // Advanced commands
+            case 'recommend':
+                await advancedCommands.handleRecommend(interaction);
+                break;
+            case 'character':
+                await advancedCommands.handleCharacter(interaction);
+                break;
+            case 'trivia':
+                await advancedCommands.handleTrivia(interaction);
+                break;
+            case 'preferences':
+                await advancedCommands.handlePreferences(interaction);
+                break;
+            case 'analytics':
+                await advancedCommands.handleAnalytics(interaction);
+                break;
+            case 'premium':
+                await advancedCommands.handlePremium(interaction);
+                break;
+            case 'admin':
+                await advancedCommands.handleAdmin(interaction);
+                break;
+            case 'advanced-search':
+                await handleAdvancedSearch(interaction);
+                break;
+            case 'watchlist':
+                await handleWatchlist(interaction);
+                break;
+            case 'random':
+                await handleRandom(interaction);
+                break;
+            case 'schedule':
+                await handleSchedule(interaction);
+                break;
+            case 'compare':
+                await handleCompare(interaction);
+                break;
             default:
                 await interaction.editReply('Unknown command!');
         }
+
+        // Track successful command execution
+        const executionTime = Date.now() - startTime;
+        await analyticsManager.trackCommand(commandName, userId, guildId, executionTime, true);
+
     } catch (error) {
-        console.error(`Error handling command ${commandName}:`, error);
-        await interaction.editReply('An error occurred while processing your command.');
+        const executionTime = Date.now() - startTime;
+        await analyticsManager.trackCommand(commandName, userId, guildId, executionTime, false, error.message);
+        await errorHandler.handleCommandError(interaction, error, commandName);
     }
 });
 
@@ -919,25 +1009,190 @@ async function handleSettings(interaction) {
 }
 
 async function handleHelp(interaction) {
+    const userId = interaction.user.id;
+    const isOwner = premiumManager.isOwner(userId);
+    
     const embed = new EmbedBuilder()
         .setColor('#00CEC9')
-        .setTitle('📖 OtakuPulse Help')
+        .setTitle('📖 OtakuPulse Help - Enhanced Edition')
         .setDescription('Here are all available commands:')
         .addFields(
-            { name: '/setup', value: 'Set up the bot for your server (Admin only)', inline: false },
-            { name: '/quote [anime]', value: 'Get a random anime quote, or from a specific anime (optional)', inline: false },
-            { name: '/airing', value: 'Show currently airing anime', inline: false },
-            { name: '/top-anime', value: 'Show top-rated anime', inline: false },
-            { name: '/search <query>', value: 'Search for anime', inline: false },
-            { name: '/trailer <anime>', value: 'Get anime trailer', inline: false },
-            { name: '/manga [query]', value: 'Search for manga or show popular manga (optional query)', inline: false },
-            { name: '/settings', value: 'View server settings (Admin only)', inline: false },
-            { name: '/help', value: 'Show this help message', inline: false }
+            { name: '**🔧 Setup & Management**', value: '`/setup` - Set up bot for server (Admin)\n`/settings` - View server settings (Admin)\n`/preferences` - Set your anime preferences', inline: false },
+            { name: '**🎌 Anime & Quotes**', value: '`/quote [anime]` - Get anime quotes\n`/search <query>` - Search for anime\n`/advanced-search` - Search with filters\n`/airing` - Currently airing anime\n`/top-anime` - Top-rated anime', inline: false },
+            { name: '**📚 Manga**', value: '`/manga [query]` - Search manga or popular\n`/watchlist` - Manage your watchlist', inline: false },
+            { name: '**🎬 Media**', value: '`/trailer <anime>` - Get anime trailers\n`/random` - Random anime recommendation\n`/schedule` - Airing schedule', inline: false },
+            { name: '**🤖 AI Features (Premium)**', value: '`/recommend` - AI-powered recommendations\n`/character <name> <anime>` - Character analysis\n`/trivia` - Anime trivia game', inline: false },
+            { name: '**📊 Analytics & Premium**', value: '`/analytics` - Server analytics (Premium)\n`/premium status` - Check premium status\n`/premium upgrade` - View upgrade options', inline: false },
+            { name: '**🛠️ Utilities**', value: '`/compare <anime1> <anime2>` - Compare anime\n`/help` - Show this help message', inline: false }
         )
-        .setFooter({ text: 'OtakuPulse - Your All-In-One Anime Hub', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' })
+        .setFooter({ 
+            text: '💎 Premium features marked | OtakuPulse Enhanced', 
+            iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' 
+        })
         .setTimestamp()
         .setThumbnail('https://cdn-icons-png.flaticon.com/512/906/906175.png')
-        .setAuthor({ name: 'OtakuPulse Bot', iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' });
+        .setAuthor({ 
+            name: 'OtakuPulse Bot - Enhanced Edition', 
+            iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' 
+        });
+
+    // Add owner commands if user is owner
+    if (isOwner) {
+        embed.addFields({
+            name: '**👑 Owner Commands (Unlimited Access)**',
+            value: '`/admin grant-premium <user> <tier>` - Grant premium to user\n`/admin revoke-premium <user>` - Revoke premium access\n`/admin stats` - View global bot statistics',
+            inline: false
+        });
+        embed.setColor('#FF6B35'); // Special orange color for owner
+        embed.setTitle('👑 OtakuPulse Help - Owner Edition');
+        embed.setFooter({ 
+            text: '👑 You have unlimited access to everything! | OtakuPulse Enhanced', 
+            iconURL: 'https://cdn-icons-png.flaticon.com/512/906/906175.png' 
+        });
+    }
+    
+    await interaction.editReply({ embeds: [embed] });
+}
+
+// Additional handler functions for new commands
+async function handleAdvancedSearch(interaction) {
+    const query = interaction.options.getString('query');
+    const genre = interaction.options.getString('genre');
+    const year = interaction.options.getInteger('year');
+    const minScore = interaction.options.getInteger('min-score');
+    
+    // Use AI to enhance search if available
+    const enhancedSearch = await aiFeatures.smartSearch(query, { genre, year, minScore });
+    
+    const searchResults = await AnimeAPI.searchAnime(enhancedSearch.enhancedQuery || query);
+    
+    // Filter results based on criteria
+    let filteredResults = searchResults;
+    if (minScore) {
+        filteredResults = filteredResults.filter(anime => anime.averageScore >= minScore);
+    }
+    if (year) {
+        // This would need to be implemented in the API call
+    }
+
+    if (filteredResults.length === 0) {
+        await interaction.editReply(`No anime found matching your criteria.`);
+        return;
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle(`🔍 Advanced Search Results`)
+        .setColor('#A29BFE')
+        .setDescription(`Found ${filteredResults.length} results for "${query}"`)
+        .setTimestamp();
+
+    if (enhancedSearch.suggestions?.length > 0) {
+        embed.addFields({
+            name: '💡 AI Suggestions',
+            value: enhancedSearch.suggestions.join(', '),
+            inline: false
+        });
+    }
+
+    filteredResults.slice(0, 5).forEach((anime, index) => {
+        embed.addFields({
+            name: `${index + 1}. ${anime.title.romaji}`,
+            value: `**Score:** ${anime.averageScore || 'N/A'}\n**Episodes:** ${anime.episodes || 'N/A'}\n**Status:** ${anime.status || 'N/A'}`,
+            inline: true
+        });
+    });
+
+    await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleWatchlist(interaction) {
+    // Implementation would require a database table for user watchlists
+    await interaction.editReply('Watchlist feature coming soon! This will allow you to save and track your anime watching progress.');
+}
+
+async function handleRandom(interaction) {
+    const genre = interaction.options.getString('genre');
+    const format = interaction.options.getString('format');
+    
+    // Get random anime from top anime list
+    const topAnime = await AnimeAPI.getTopAnime();
+    if (topAnime.length === 0) {
+        await interaction.editReply('Could not fetch anime for random selection.');
+        return;
+    }
+    
+    const randomAnime = topAnime[Math.floor(Math.random() * topAnime.length)];
+    
+    const embed = new EmbedBuilder()
+        .setTitle('🎲 Random Anime Recommendation')
+        .setColor('#FF6B6B')
+        .addFields([
+            { name: 'Title', value: randomAnime.title.romaji, inline: true },
+            { name: 'Score', value: `${randomAnime.averageScore || 'N/A'}/100`, inline: true },
+            { name: 'Episodes', value: randomAnime.episodes?.toString() || 'N/A', inline: true },
+            { name: 'Status', value: randomAnime.status || 'N/A', inline: true },
+            { name: 'Format', value: randomAnime.format || 'N/A', inline: true }
+        ])
+        .setTimestamp();
+    
+    if (randomAnime.coverImage?.large) {
+        embed.setThumbnail(randomAnime.coverImage.large);
+    }
+    
+    await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleSchedule(interaction) {
+    const day = interaction.options.getString('day');
+    
+    // Get currently airing anime (this could be enhanced to filter by day)
+    const airingAnime = await AnimeAPI.getCurrentlyAiring();
+    
+    const embed = new EmbedBuilder()
+        .setTitle(`📅 Anime Airing Schedule${day ? ` - ${day.charAt(0).toUpperCase() + day.slice(1)}` : ''}`)
+        .setColor('#FFD93D')
+        .setDescription('Currently airing anime')
+        .setTimestamp();
+    
+    airingAnime.slice(0, 10).forEach((anime, index) => {
+        embed.addFields({
+            name: `${anime.title.romaji}`,
+            value: `**Score:** ${anime.averageScore || 'N/A'}\n**Episode:** ${anime.nextAiringEpisode?.episode || 'N/A'}`,
+            inline: true
+        });
+    });
+    
+    await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleCompare(interaction) {
+    const anime1Name = interaction.options.getString('anime1');
+    const anime2Name = interaction.options.getString('anime2');
+    
+    const [results1, results2] = await Promise.all([
+        AnimeAPI.searchAnime(anime1Name),
+        AnimeAPI.searchAnime(anime2Name)
+    ]);
+    
+    if (results1.length === 0 || results2.length === 0) {
+        await interaction.editReply('Could not find one or both anime for comparison.');
+        return;
+    }
+    
+    const anime1 = results1[0];
+    const anime2 = results2[0];
+    
+    const embed = new EmbedBuilder()
+        .setTitle('⚔️ Anime Comparison')
+        .setColor('#6C5CE7')
+        .addFields([
+            { name: '📺 Titles', value: `**${anime1.title.romaji}** vs **${anime2.title.romaji}**`, inline: false },
+            { name: '⭐ Scores', value: `${anime1.averageScore || 'N/A'} vs ${anime2.averageScore || 'N/A'}`, inline: true },
+            { name: '📊 Episodes', value: `${anime1.episodes || 'N/A'} vs ${anime2.episodes || 'N/A'}`, inline: true },
+            { name: '🟢 Status', value: `${anime1.status || 'N/A'} vs ${anime2.status || 'N/A'}`, inline: true }
+        ])
+        .setTimestamp();
+    
     await interaction.editReply({ embeds: [embed] });
 }
 
@@ -3127,25 +3382,26 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Error handling
+// Enhanced error handling for process events
 process.on('unhandledRejection', (error) => {
-    console.error('Unhandled promise rejection:', error);
+    logger.error('Unhandled promise rejection', error);
+    errorHandler.handleProcessError(error, 'unhandledRejection');
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught exception:', error);
-    process.exit(1);
+    logger.error('Uncaught exception', error);
+    errorHandler.handleProcessError(error, 'uncaughtException');
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('Received SIGINT, shutting down gracefully...');
+    logger.info('Received SIGINT, shutting down gracefully...');
     client.destroy();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    console.log('Received SIGTERM, shutting down gracefully...');
+    logger.info('Received SIGTERM, shutting down gracefully...');
     client.destroy();
     process.exit(0);
 });
@@ -3154,13 +3410,14 @@ process.on('SIGTERM', () => {
 const PORT = process.env.PORT || 3000;
 
 client.login(process.env.DISCORD_TOKEN).then(() => {
-    console.log('✅ Discord bot logged in successfully');
+    logger.info('✅ Discord bot logged in successfully');
     app.listen(PORT, () => {
-        console.log(`🌐 Web server running on port ${PORT}`);
-        console.log(`📱 Dashboard: http://localhost:${PORT}`);
-        console.log(`🔗 Bot invite: https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=2048&scope=bot%20applications.commands`);
+        logger.info(`🌐 Web server running on port ${PORT}`);
+        logger.info(`📱 Dashboard: http://localhost:${PORT}`);
+        logger.info(`🔗 Bot invite: https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=2048&scope=bot%20applications.commands`);
+        logger.info('🚀 OtakuPulse Enhanced is ready to serve!');
     });
 }).catch(error => {
-    console.error('❌ Failed to login to Discord:', error);
+    logger.error('❌ Failed to login to Discord', error);
     process.exit(1);
 });
