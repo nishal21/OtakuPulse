@@ -1,5 +1,5 @@
 // Advanced slash commands for enhanced functionality
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 
 class AdvancedCommands {
     constructor(animeAPI, aiFeatures, analyticsManager, premiumManager, logger) {
@@ -93,7 +93,7 @@ class AdvancedCommands {
             new SlashCommandBuilder()
                 .setName('analytics')
                 .setDescription('View server analytics and statistics')
-                .setDefaultMemberPermissions('0x0000000000000008'), // ADMINISTRATOR
+                .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // ADMINISTRATOR
 
             // Premium management
             new SlashCommandBuilder()
