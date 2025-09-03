@@ -63,9 +63,6 @@ ensureGuildSettingsTable().catch(error => {
     logger.error('Failed to ensure database tables', error);
 });
 
-// Initialize advanced commands
-const advancedCommands = new AdvancedCommands(AnimeAPI, aiFeatures, analyticsManager, premiumManager, logger);
-
 // Helper: get all bot guild settings from DB
 async function getAllGuildSettings() {
     // Get all guilds the bot is in
@@ -503,6 +500,9 @@ class AnimeAPI {
         return data?.Page?.media || [];
     }
 }
+
+// Initialize advanced commands after AnimeAPI class is defined
+const advancedCommands = new AdvancedCommands(AnimeAPI, aiFeatures, analyticsManager, premiumManager, logger);
 
 // Slash commands (enhanced with new commands)
 const baseCommands = [
