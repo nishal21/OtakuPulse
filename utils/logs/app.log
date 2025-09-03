@@ -1,0 +1,10 @@
+{
+  "timestamp": "2025-09-03T13:03:03.996Z",
+  "level": "INFO",
+  "message": "Logger test successful"
+}
+{
+  "timestamp": "2025-09-03T13:03:03.999Z",
+  "level": "WARN",
+  "message": "Warning test"
+}
