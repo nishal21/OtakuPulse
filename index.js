@@ -1645,18 +1645,27 @@ async function sendLatestTrailers() {
 
 // OAuth2 Routes
 app.get('/oauth/login', (req, res) => {
+    console.log('🔐 OAuth login initiated');
+    console.log('CLIENT_ID:', process.env.CLIENT_ID ? 'Set' : 'Missing');
+    console.log('REDIRECT_URI:', process.env.REDIRECT_URI);
+    
     const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds`;
+    console.log('🔗 Redirecting to:', authUrl);
     res.redirect(authUrl);
 });
 
 app.get('/oauth/callback', async (req, res) => {
     const { code } = req.query;
+    console.log('📞 OAuth callback received');
+    console.log('Code:', code ? 'Present' : 'Missing');
     
     if (!code) {
+        console.error('❌ No authorization code provided');
         return res.status(400).send('No authorization code provided');
     }
     
     try {
+        console.log('🔄 Exchanging code for access token...');
         // Exchange code for access token
         const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
             client_id: process.env.CLIENT_ID,
@@ -1669,13 +1678,16 @@ app.get('/oauth/callback', async (req, res) => {
         });
         
         const { access_token } = tokenResponse.data;
+        console.log('✅ Access token received');
         
         // Get user info
+        console.log('👤 Fetching user info...');
         const userResponse = await axios.get('https://discord.com/api/users/@me', {
             headers: { 'Authorization': `Bearer ${access_token}` }
         });
         
         // Get user guilds
+        console.log('🏰 Fetching user guilds...');
         const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
             headers: { 'Authorization': `Bearer ${access_token}` }
         });
@@ -1684,19 +1696,28 @@ app.get('/oauth/callback', async (req, res) => {
         req.session.guilds = guildsResponse.data;
         req.session.accessToken = access_token;
         
+        console.log('✅ Session saved, redirecting to dashboard');
+        console.log('User:', userResponse.data.username);
         res.redirect('/dashboard');
         
     } catch (error) {
-        console.error('OAuth callback error:', error);
+        console.error('❌ OAuth callback error:', error.response?.data || error.message);
         res.status(500).send('Authentication failed');
     }
 });
 
 
 app.get('/dashboard', async (req, res) => {
+    console.log('📊 Dashboard accessed');
+    console.log('Session user:', req.session.user ? 'Present' : 'Missing');
+    
     if (!req.session.user) {
+        console.log('🔒 No user session, redirecting to login');
         return res.redirect('/oauth/login');
     }
+    
+    console.log('✅ User authenticated:', req.session.user.username);
+    console.log('🏰 Loading bot guilds...');
     // Show all bot-joined servers and allow feature selection
     const botGuilds = Array.from(client.guilds.cache.values());
     // Fetch settings for all guilds from Neon DB
