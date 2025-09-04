@@ -245,7 +245,7 @@ class AnimeAPI {
         return data?.Page?.media || [];
     }
 
-    // Get anime quotes
+    // Get anime quotes using the correct AnimeChan v1 API
     static async getAnimeQuote(anime = null) {
         try {
             await rateLimit('animechan');
@@ -256,45 +256,38 @@ class AnimeAPI {
                 url = `${ANIMECHAN_API_BASE}/quotes/random`;
             }
             
-            const response = await axios.get(url);
-            console.log('AnimeChan API Response:', JSON.stringify(response.data, null, 2));
-            
-            let quoteData = null;
-            
-            // Handle different response formats from AnimeChan.io API
-            if (response.data) {
-                if (Array.isArray(response.data)) {
-                    // If response is an array, take the first element
-                    quoteData = response.data[0];
-                } else if (response.data.data) {
-                    // If response has a 'data' property
-                    quoteData = response.data.data;
-                } else if (response.data.quote && response.data.anime && response.data.character) {
-                    // Direct quote object
-                    quoteData = response.data;
+            const response = await axios.get(url, {
+                headers: {
+                    'User-Agent': 'OtakuPulse Discord Bot',
+                    'Accept': 'application/json'
                 }
-            }
+            });
             
-            // Ensure we have valid quote data and convert everything to strings
-            if (quoteData && quoteData.quote && quoteData.anime && quoteData.character) {
+            logger.info('AnimeChan API Response:', JSON.stringify(response.data, null, 2));
+            
+            // Handle the correct AnimeChan v1 API response format
+            if (response.data && response.data.status === 'success' && response.data.data) {
+                const quoteData = response.data.data;
+                
+                // Extract data from the correct structure
                 const result = {
-                    quote: String(quoteData.quote || '').trim(),
-                    anime: String(quoteData.anime || '').trim(),
-                    character: String(quoteData.character || '').trim()
+                    quote: String(quoteData.content || '').trim(),
+                    anime: String(quoteData.anime?.name || '').trim(),
+                    character: String(quoteData.character?.name || '').trim()
                 };
                 
-                // Validate that none of the fields are empty or invalid
+                // Validate that all required fields are present and valid
                 if (result.quote && result.anime && result.character && 
                     result.quote !== 'undefined' && result.anime !== 'undefined' && result.character !== 'undefined') {
                     return result;
                 }
             }
             
-            // If API call fails or returns invalid data, throw error to use fallback
+            // If API returns success but with invalid data, throw error to use fallback
             throw new Error('Invalid or empty quote data from API');
             
         } catch (error) {
-            console.error('Error fetching anime quote from API:', error.message);
+            logger.error('Error fetching anime quote from API:', error.message);
             
             // Return fallback quote if all API calls fail
             const fallbackQuotes = [
@@ -313,22 +306,29 @@ class AnimeAPI {
         }
     }
 
-    // Get inspirational quotes
+    // Get inspirational quotes using the correct AnimeChan v1 API
     static async getInspirationalQuote() {
         try {
             await rateLimit('animechan');
-            const response = await axios.get(`${ANIMECHAN_API_BASE}/quotes/random`);
-            // New AnimeChan.io API returns { data: { anime, character, quote } }
-            if (response.data && response.data.data) {
+            const response = await axios.get(`${ANIMECHAN_API_BASE}/quotes/random`, {
+                headers: {
+                    'User-Agent': 'OtakuPulse Discord Bot',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            // Handle the correct AnimeChan v1 API response format
+            if (response.data && response.data.status === 'success' && response.data.data) {
+                const quoteData = response.data.data;
                 return {
-                    quote: response.data.data.quote,
-                    author: `${response.data.data.character} (${response.data.data.anime})`
+                    quote: quoteData.content,
+                    author: `${quoteData.character.name} (${quoteData.anime.name})`
                 };
             } else {
-                throw new Error('Invalid response format');
+                throw new Error('Invalid response format from AnimeChan API');
             }
         } catch (error) {
-            console.error('Error fetching inspirational quote from AnimeChan:', error.message);
+            logger.error('Error fetching inspirational quote from AnimeChan:', error.message);
             // Fallback anime quotes
             const fallbackQuotes = [
                 { quote: "To know sorrow is not terrifying. What is terrifying is to know you can't go back to happiness you could have.", author: "Matsumoto Rangiku (Bleach)" },
