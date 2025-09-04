@@ -478,8 +478,17 @@ class AdvancedCommands {
         const guildId = interaction.guildId;
 
         try {
-            // Check premium access
-            const hasAccess = await this.premium.checkFeatureAccess(userId, 'analytics', guildId);
+            console.log('📊 Analytics command called by:', interaction.user.username);
+            console.log('📊 User ID:', userId);
+            
+            // Check if user is owner first
+            const isOwner = await this.premium.isOwner(userId);
+            console.log('📊 Is owner:', isOwner);
+            
+            // Check premium access (owners get automatic access)
+            const hasAccess = isOwner || await this.premium.checkFeatureAccess(userId, 'analytics', guildId);
+            console.log('📊 Has analytics access:', hasAccess);
+            
             if (!hasAccess) {
                 return await interaction.editReply({
                     content: '💎 Analytics require a premium subscription. Use `/premium upgrade` to unlock detailed analytics!',
@@ -487,7 +496,18 @@ class AdvancedCommands {
                 });
             }
 
+            // Check if analytics is enabled
+            if (!this.analytics.enabled) {
+                console.log('❌ Analytics is disabled');
+                return await interaction.editReply({
+                    content: '📊 Server Analytics\n\n❌ **Analytics disabled**\n\nAnalytics are currently disabled. Contact the bot administrator to enable this feature.',
+                    ephemeral: true
+                });
+            }
+
+            console.log('📊 Generating analytics report...');
             const report = await this.analytics.generateReport(guildId);
+            console.log('📊 Report generated:', report);
 
             const embed = new EmbedBuilder()
                 .setTitle('📊 Server Analytics')
@@ -496,11 +516,17 @@ class AdvancedCommands {
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
-            await this.premium.trackFeatureUsage(userId, 'analytics', guildId);
-            await this.analytics.trackCommand('analytics', userId, guildId, Date.now() - startTime);
+            
+            if (this.analytics.enabled) {
+                await this.premium.trackFeatureUsage(userId, 'analytics', guildId);
+                await this.analytics.trackCommand('analytics', userId, guildId, Date.now() - startTime);
+            }
 
         } catch (error) {
-            await this.analytics.trackCommand('analytics', userId, guildId, Date.now() - startTime, false, error.message);
+            console.error('❌ Analytics command error:', error);
+            if (this.analytics.enabled) {
+                await this.analytics.trackCommand('analytics', userId, guildId, Date.now() - startTime, false, error.message);
+            }
             throw error;
         }
     }
