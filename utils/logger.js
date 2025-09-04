@@ -102,6 +102,14 @@ class ErrorHandler {
             'DEFAULT': '⚠️ An unexpected error occurred. Please try again or contact support.'
         };
 
+        // Log the actual error for debugging
+        console.error('🐛 Detailed error info:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code,
+            name: error.name
+        });
+
         // Determine error type based on error message/type
         let errorType = 'DEFAULT';
         if (error.code === 'NETWORK_ERROR' || error.message.includes('network')) {
@@ -114,6 +122,11 @@ class ErrorHandler {
             errorType = 'PERMISSION_ERROR';
         } else if (error.message.includes('timeout')) {
             errorType = 'TIMEOUT_ERROR';
+        }
+
+        // In development, show more detailed errors
+        if (process.env.NODE_ENV === 'development') {
+            return `${errorMessages[errorType]}\n\n🔧 Debug info: ${error.message}`;
         }
 
         return errorMessages[errorType];
