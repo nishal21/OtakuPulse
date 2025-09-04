@@ -97,17 +97,22 @@ class SecurityManager {
 
     // Session security
     getSessionOptions() {
+        const isProduction = process.env.NODE_ENV === 'production';
+        
         return {
             secret: process.env.SESSION_SECRET || 'default-secret-change-in-production',
             resave: false,
             saveUninitialized: false,
             name: 'otaku-session',
             cookie: {
-                secure: process.env.NODE_ENV === 'production',
+                secure: isProduction, // Only secure in production (HTTPS)
                 httpOnly: true,
                 maxAge: 24 * 60 * 60 * 1000, // 24 hours
-                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax' // More permissive for OAuth
-            }
+                sameSite: 'lax' // Use 'lax' for better OAuth compatibility
+            },
+            // Additional production settings
+            proxy: isProduction, // Trust proxy in production
+            rolling: true // Reset expiration on activity
         };
     }
 
