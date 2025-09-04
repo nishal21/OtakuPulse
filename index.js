@@ -42,6 +42,11 @@ app.use(securityManager.getHelmetOptions());
 app.use(securityManager.getCorsOptions());
 app.use(securityManager.createRateLimit());
 
+// Trust proxy for production deployments (Render)
+if (process.env.NODE_ENV === 'production') {
+    app.set('trust proxy', 1);
+}
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
@@ -1724,7 +1729,46 @@ app.get('/oauth/callback', async (req, res) => {
                 return res.status(500).send('Session save failed');
             }
             console.log('💾 Session saved successfully');
-            res.redirect('/dashboard');
+            
+            // Instead of redirecting, send a page with auto-redirect
+            res.send(`
+                <html>
+                <head>
+                    <title>OtakuPulse - Redirecting...</title>
+                    <style>
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            background: #1a1a1a; 
+                            color: #fff; 
+                            text-align: center; 
+                            padding: 50px; 
+                        }
+                        .loader { 
+                            border: 4px solid #333; 
+                            border-top: 4px solid #7fffd4; 
+                            border-radius: 50%; 
+                            width: 40px; 
+                            height: 40px; 
+                            animation: spin 1s linear infinite; 
+                            margin: 20px auto; 
+                        }
+                        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                    </style>
+                    <meta http-equiv="refresh" content="2;url=/dashboard">
+                </head>
+                <body>
+                    <h1>🎉 Login Successful!</h1>
+                    <p>Welcome ${userResponse.data.username}!</p>
+                    <div class="loader"></div>
+                    <p>Redirecting to dashboard...</p>
+                    <script>
+                        setTimeout(() => {
+                            window.location.href = '/dashboard';
+                        }, 2000);
+                    </script>
+                </body>
+                </html>
+            `);
         });
         
     } catch (error) {
