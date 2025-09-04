@@ -86,7 +86,7 @@ async function getAllGuildSettings() {
 
 // API Configuration
 const ANILIST_API = 'https://graphql.anilist.co';
-const ANIMECHAN_API_BASE = 'https://api.animechan.io/v1';
+const ANIMECHAN_API_BASE = 'https://animechan.io/api/v1';
 const QUOTES_API_BASE = 'https://api.api-ninjas.com/v1/quotes';
 
 // Rate limiting for API calls
@@ -661,7 +661,7 @@ const baseCommands = [
 ];
 
 // Combine base commands with advanced commands
-const commands = [...baseCommands, ...advancedCommands.getCommands()];
+const commands = baseCommands; // Temporarily use only base commands to fix duplication issue
 
 // Discord bot event handlers
 client.once('ready', async () => {
