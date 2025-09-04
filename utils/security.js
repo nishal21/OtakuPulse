@@ -5,11 +5,24 @@ const cors = require('cors');
 
 class SecurityManager {
     constructor() {
-        this.trustedOrigins = [
+        // Base trusted origins
+        const baseOrigins = [
             'https://discord.com',
-            'https://discordapp.com',
+            'https://discordapp.com'
+        ];
+        
+        // Add deployment URLs
+        const deploymentOrigins = [
+            'https://otakupulse.onrender.com', // Render deployment
             process.env.FRONTEND_URL || 'http://localhost:3000'
         ];
+        
+        // Allow additional origins from environment variable
+        const additionalOrigins = process.env.ADDITIONAL_ORIGINS 
+            ? process.env.ADDITIONAL_ORIGINS.split(',').map(origin => origin.trim())
+            : [];
+        
+        this.trustedOrigins = [...baseOrigins, ...deploymentOrigins, ...additionalOrigins];
     }
 
     // Rate limiting middleware
@@ -35,13 +48,28 @@ class SecurityManager {
     getCorsOptions() {
         return cors({
             origin: (origin, callback) => {
-                // Allow requests with no origin (like mobile apps or curl requests)
-                if (!origin) return callback(null, true);
+                console.log('🔍 CORS origin check:', origin);
+                console.log('🔍 Trusted origins:', this.trustedOrigins);
                 
-                if (this.trustedOrigins.includes(origin)) {
+                // Allow requests with no origin (like mobile apps or curl requests)
+                if (!origin) {
+                    console.log('✅ CORS: Allowing request with no origin');
                     return callback(null, true);
                 }
                 
+                // Check if origin is in trusted list
+                if (this.trustedOrigins.includes(origin)) {
+                    console.log('✅ CORS: Origin allowed');
+                    return callback(null, true);
+                }
+                
+                // In production, also allow same-origin requests (render.com)
+                if (process.env.NODE_ENV === 'production' && origin.includes('onrender.com')) {
+                    console.log('✅ CORS: Allowing Render origin');
+                    return callback(null, true);
+                }
+                
+                console.log('❌ CORS: Origin not allowed');
                 callback(new Error('Not allowed by CORS'));
             },
             credentials: true,
