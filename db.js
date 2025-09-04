@@ -87,6 +87,37 @@ async function ensureGuildSettingsTable() {
             );
         `);
         
+        // Create user watchlist table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_watchlist (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(32) NOT NULL,
+                anime_id VARCHAR(100) NOT NULL,
+                anime_title VARCHAR(500) NOT NULL,
+                anime_cover_image TEXT,
+                status VARCHAR(20) DEFAULT 'plan_to_watch',
+                episodes_watched INTEGER DEFAULT 0,
+                total_episodes INTEGER DEFAULT 0,
+                score INTEGER DEFAULT 0,
+                notes TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, anime_id)
+            );
+        `);
+        
+        // Create watchlist sharing table (for friends/server sharing)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS watchlist_sharing (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(32) NOT NULL,
+                guild_id VARCHAR(32),
+                is_public BOOLEAN DEFAULT false,
+                allow_recommendations BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        
         console.log('✅ Database tables created successfully');
     } catch (error) {
         console.error('❌ Failed to create database tables:', error.message);
@@ -177,6 +208,131 @@ async function recordTrailerNotification(animeId, trailerId, title) {
     `, [animeId, trailerId, title]);
 }
 
+// Watchlist functions
+async function addToWatchlist(userId, animeData) {
+    const { id, title, coverImage, episodes, status = 'plan_to_watch' } = animeData;
+    
+    await pool.query(`
+        INSERT INTO user_watchlist (user_id, anime_id, anime_title, anime_cover_image, total_episodes, status)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (user_id, anime_id) 
+        DO UPDATE SET 
+            anime_title = EXCLUDED.anime_title,
+            anime_cover_image = EXCLUDED.anime_cover_image,
+            total_episodes = EXCLUDED.total_episodes,
+            updated_at = CURRENT_TIMESTAMP
+    `, [userId, id, title, coverImage, episodes || 0, status]);
+}
+
+async function removeFromWatchlist(userId, animeId) {
+    const { rows } = await pool.query(`
+        DELETE FROM user_watchlist 
+        WHERE user_id = $1 AND anime_id = $2 
+        RETURNING *
+    `, [userId, animeId]);
+    return rows.length > 0;
+}
+
+async function getUserWatchlist(userId, status = null) {
+    let query = `
+        SELECT * FROM user_watchlist 
+        WHERE user_id = $1
+    `;
+    let params = [userId];
+    
+    if (status) {
+        query += ` AND status = $2`;
+        params.push(status);
+    }
+    
+    query += ` ORDER BY updated_at DESC`;
+    
+    const { rows } = await pool.query(query, params);
+    return rows;
+}
+
+async function updateWatchlistEntry(userId, animeId, updates) {
+    const setClause = [];
+    const values = [userId, animeId];
+    let paramIndex = 3;
+    
+    if (updates.status) {
+        setClause.push(`status = $${paramIndex++}`);
+        values.push(updates.status);
+    }
+    if (updates.episodes_watched !== undefined) {
+        setClause.push(`episodes_watched = $${paramIndex++}`);
+        values.push(updates.episodes_watched);
+    }
+    if (updates.score !== undefined) {
+        setClause.push(`score = $${paramIndex++}`);
+        values.push(updates.score);
+    }
+    if (updates.notes !== undefined) {
+        setClause.push(`notes = $${paramIndex++}`);
+        values.push(updates.notes);
+    }
+    
+    setClause.push(`updated_at = CURRENT_TIMESTAMP`);
+    
+    const { rows } = await pool.query(`
+        UPDATE user_watchlist 
+        SET ${setClause.join(', ')}
+        WHERE user_id = $1 AND anime_id = $2
+        RETURNING *
+    `, values);
+    
+    return rows[0] || null;
+}
+
+async function getWatchlistEntry(userId, animeId) {
+    const { rows } = await pool.query(`
+        SELECT * FROM user_watchlist 
+        WHERE user_id = $1 AND anime_id = $2
+    `, [userId, animeId]);
+    return rows[0] || null;
+}
+
+async function getWatchlistStats(userId) {
+    const { rows } = await pool.query(`
+        SELECT 
+            status,
+            COUNT(*) as count,
+            AVG(score) as avg_score
+        FROM user_watchlist 
+        WHERE user_id = $1 
+        GROUP BY status
+    `, [userId]);
+    
+    const stats = {
+        plan_to_watch: 0,
+        watching: 0,
+        completed: 0,
+        on_hold: 0,
+        dropped: 0,
+        total: 0,
+        avg_score: 0
+    };
+    
+    let totalCount = 0;
+    let totalScore = 0;
+    let scoredCount = 0;
+    
+    rows.forEach(row => {
+        stats[row.status] = parseInt(row.count);
+        totalCount += parseInt(row.count);
+        if (row.avg_score && row.avg_score > 0) {
+            totalScore += parseFloat(row.avg_score) * parseInt(row.count);
+            scoredCount += parseInt(row.count);
+        }
+    });
+    
+    stats.total = totalCount;
+    stats.avg_score = scoredCount > 0 ? (totalScore / scoredCount).toFixed(1) : 0;
+    
+    return stats;
+}
+
 module.exports = {
     pool,
     testDatabaseConnection,
@@ -186,5 +342,12 @@ module.exports = {
     isMangaUpdateNotified,
     recordMangaUpdate,
     isTrailerNotified,
-    recordTrailerNotification
+    recordTrailerNotification,
+    // Watchlist functions
+    addToWatchlist,
+    removeFromWatchlist,
+    getUserWatchlist,
+    updateWatchlistEntry,
+    getWatchlistEntry,
+    getWatchlistStats
 };
