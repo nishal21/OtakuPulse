@@ -1715,7 +1715,17 @@ app.get('/oauth/callback', async (req, res) => {
         
         console.log('✅ Session saved, redirecting to dashboard');
         console.log('User:', userResponse.data.username);
-        res.redirect('/dashboard');
+        console.log('Session ID:', req.sessionID);
+        
+        // Force session save before redirect
+        req.session.save((err) => {
+            if (err) {
+                console.error('❌ Session save error:', err);
+                return res.status(500).send('Session save failed');
+            }
+            console.log('💾 Session saved successfully');
+            res.redirect('/dashboard');
+        });
         
     } catch (error) {
         console.error('❌ OAuth callback error:', error.response?.data || error.message);
@@ -1741,7 +1751,9 @@ app.get('/oauth/callback', async (req, res) => {
 
 app.get('/dashboard', async (req, res) => {
     console.log('📊 Dashboard accessed');
+    console.log('Session ID:', req.sessionID);
     console.log('Session user:', req.session.user ? 'Present' : 'Missing');
+    console.log('Session exists:', !!req.session);
     
     if (!req.session.user) {
         console.log('🔒 No user session, redirecting to login');
