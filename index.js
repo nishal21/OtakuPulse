@@ -1649,6 +1649,23 @@ app.get('/oauth/login', (req, res) => {
     console.log('CLIENT_ID:', process.env.CLIENT_ID ? 'Set' : 'Missing');
     console.log('REDIRECT_URI:', process.env.REDIRECT_URI);
     
+    // Check if required environment variables are set
+    if (!process.env.CLIENT_ID || process.env.CLIENT_ID === 'your_discord_client_id_here') {
+        return res.status(500).send(`
+            <h1>❌ Configuration Error</h1>
+            <p>Discord CLIENT_ID is not configured. Please:</p>
+            <ol>
+                <li>Go to <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a></li>
+                <li>Copy your Application ID</li>
+                <li>Update the CLIENT_ID in your .env file</li>
+            </ol>
+        `);
+    }
+    
+    if (!process.env.REDIRECT_URI) {
+        return res.status(500).send('REDIRECT_URI not configured');
+    }
+    
     const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.REDIRECT_URI)}&response_type=code&scope=identify%20guilds`;
     console.log('🔗 Redirecting to:', authUrl);
     res.redirect(authUrl);
@@ -1702,7 +1719,22 @@ app.get('/oauth/callback', async (req, res) => {
         
     } catch (error) {
         console.error('❌ OAuth callback error:', error.response?.data || error.message);
-        res.status(500).send('Authentication failed');
+        
+        // More detailed error message
+        let errorMessage = 'Authentication failed. ';
+        if (error.response?.status === 400) {
+            errorMessage += 'Invalid client credentials. Please check your CLIENT_ID and CLIENT_SECRET in .env file.';
+        } else if (error.response?.status === 401) {
+            errorMessage += 'Invalid authorization code. Please try logging in again.';
+        } else {
+            errorMessage += `Error: ${error.message}`;
+        }
+        
+        res.status(500).send(`
+            <h1>❌ OAuth Error</h1>
+            <p>${errorMessage}</p>
+            <p><a href="/oauth/login">Try Again</a></p>
+        `);
     }
 });
 
