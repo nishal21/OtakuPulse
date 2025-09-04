@@ -12,6 +12,7 @@ const SecurityManager = require('./utils/security');
 const AIFeatures = require('./features/ai');
 const AnalyticsManager = require('./features/analytics');
 const PremiumManager = require('./features/premium');
+const WatchlistManager = require('./features/watchlist');
 const AdvancedCommands = require('./commands/advanced');
 
 // Initialize enhanced utilities
@@ -509,6 +510,9 @@ class AnimeAPI {
 // Initialize advanced commands after AnimeAPI class is defined
 const advancedCommands = new AdvancedCommands(AnimeAPI, aiFeatures, analyticsManager, premiumManager, logger);
 
+// Initialize watchlist manager
+const watchlistManager = new WatchlistManager(AnimeAPI, logger);
+
 // Slash commands (enhanced with new commands)
 const baseCommands = [
     new SlashCommandBuilder()
@@ -572,7 +576,88 @@ const baseCommands = [
     
     new SlashCommandBuilder()
         .setName('help')
-        .setDescription('Show all available commands')
+        .setDescription('Show all available commands'),
+
+    new SlashCommandBuilder()
+        .setName('watchlist')
+        .setDescription('Manage your anime watchlist')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('view')
+                .setDescription('View your watchlist')
+                .addStringOption(option =>
+                    option.setName('status')
+                        .setDescription('Filter by watch status')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: 'Plan to Watch', value: 'plan_to_watch' },
+                            { name: 'Currently Watching', value: 'watching' },
+                            { name: 'Completed', value: 'completed' },
+                            { name: 'On Hold', value: 'on_hold' },
+                            { name: 'Dropped', value: 'dropped' }
+                        )
+                )
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('add')
+                .setDescription('Add anime to your watchlist')
+                .addStringOption(option =>
+                    option.setName('anime')
+                        .setDescription('Name of the anime to add')
+                        .setRequired(true)
+                )
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('remove')
+                .setDescription('Remove anime from your watchlist')
+                .addStringOption(option =>
+                    option.setName('anime')
+                        .setDescription('Name of the anime to remove')
+                        .setRequired(true)
+                )
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('update')
+                .setDescription('Update anime status or progress')
+                .addStringOption(option =>
+                    option.setName('anime')
+                        .setDescription('Name of the anime to update')
+                        .setRequired(true)
+                )
+                .addStringOption(option =>
+                    option.setName('status')
+                        .setDescription('New watch status')
+                        .setRequired(false)
+                        .addChoices(
+                            { name: 'Plan to Watch', value: 'plan_to_watch' },
+                            { name: 'Currently Watching', value: 'watching' },
+                            { name: 'Completed', value: 'completed' },
+                            { name: 'On Hold', value: 'on_hold' },
+                            { name: 'Dropped', value: 'dropped' }
+                        )
+                )
+                .addIntegerOption(option =>
+                    option.setName('episodes')
+                        .setDescription('Episodes watched')
+                        .setRequired(false)
+                        .setMinValue(0)
+                )
+                .addIntegerOption(option =>
+                    option.setName('score')
+                        .setDescription('Your score (1-10)')
+                        .setRequired(false)
+                        .setMinValue(1)
+                        .setMaxValue(10)
+                )
+        )
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('stats')
+                .setDescription('View your anime statistics')
+        )
 ];
 
 // Combine base commands with advanced commands
@@ -1111,8 +1196,197 @@ async function handleAdvancedSearch(interaction) {
 }
 
 async function handleWatchlist(interaction) {
-    // Implementation would require a database table for user watchlists
-    await interaction.editReply('Watchlist feature coming soon! This will allow you to save and track your anime watching progress.');
+    const subcommand = interaction.options.getSubcommand();
+    const userId = interaction.user.id;
+
+    try {
+        switch (subcommand) {
+            case 'view':
+                await handleWatchlistView(interaction);
+                break;
+            case 'add':
+                await handleWatchlistAdd(interaction);
+                break;
+            case 'remove':
+                await handleWatchlistRemove(interaction);
+                break;
+            case 'update':
+                await handleWatchlistUpdate(interaction);
+                break;
+            case 'stats':
+                await handleWatchlistStats(interaction);
+                break;
+            default:
+                await interaction.editReply('Unknown watchlist command!');
+        }
+    } catch (error) {
+        logger.error('Watchlist command error:', error);
+        await interaction.editReply('An error occurred while processing your watchlist command. Please try again.');
+    }
+}
+
+async function handleWatchlistView(interaction) {
+    const userId = interaction.user.id;
+    const status = interaction.options.getString('status');
+
+    const result = await watchlistManager.getWatchlist(userId, status);
+    
+    if (!result.success) {
+        return await interaction.editReply('❌ Failed to retrieve your watchlist. Please try again.');
+    }
+
+    if (result.watchlist.length === 0) {
+        const message = status 
+            ? `📚 No anime found with status: **${status.replace('_', ' ')}**\n\nUse \`/watchlist add\` to add anime to your list!`
+            : '📚 Your watchlist is empty!\n\nUse `/watchlist add <anime name>` to start building your list!';
+        return await interaction.editReply(message);
+    }
+
+    const embed = watchlistManager.generateWatchlistEmbed(result.watchlist, status);
+    const buttons = watchlistManager.generateWatchlistButtons(status);
+
+    await interaction.editReply({
+        embeds: [embed],
+        components: buttons
+    });
+}
+
+async function handleWatchlistAdd(interaction) {
+    const userId = interaction.user.id;
+    const animeName = interaction.options.getString('anime');
+
+    // Search for anime first
+    const searchResults = await AnimeAPI.searchAnime(animeName);
+    
+    if (!searchResults || searchResults.length === 0) {
+        return await interaction.editReply(`❌ No anime found with the name: **${animeName}**\n\nPlease check the spelling and try again.`);
+    }
+
+    const anime = searchResults[0]; // Take the first result
+
+    // Check if already in watchlist
+    const checkResult = await watchlistManager.checkAnimeInWatchlist(userId, anime.id);
+    if (checkResult.success && checkResult.inWatchlist) {
+        return await interaction.editReply({
+            content: `📚 **${anime.title.romaji}** is already in your watchlist!`,
+            ephemeral: true
+        });
+    }
+
+    // Add to watchlist
+    const result = await watchlistManager.addAnime(userId, anime.id, anime.title.romaji);
+    
+    if (!result.success) {
+        return await interaction.editReply('❌ Failed to add anime to your watchlist. Please try again.');
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle('✅ Added to Watchlist!')
+        .setDescription(`**${result.anime.title}** has been added to your watchlist.`)
+        .setColor('#00B894')
+        .setThumbnail(result.anime.coverImage)
+        .addFields(
+            { name: 'Status', value: '📋 Plan to Watch', inline: true },
+            { name: 'Episodes', value: result.anime.episodes ? `${result.anime.episodes} episodes` : 'Unknown', inline: true }
+        )
+        .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleWatchlistRemove(interaction) {
+    const userId = interaction.user.id;
+    const animeName = interaction.options.getString('anime');
+
+    // Get user's watchlist to find the anime
+    const watchlistResult = await watchlistManager.getWatchlist(userId);
+    if (!watchlistResult.success) {
+        return await interaction.editReply('❌ Failed to access your watchlist. Please try again.');
+    }
+
+    // Find anime in watchlist
+    const animeInList = watchlistResult.watchlist.find(item => 
+        item.anime_title.toLowerCase().includes(animeName.toLowerCase())
+    );
+
+    if (!animeInList) {
+        return await interaction.editReply(`❌ **${animeName}** not found in your watchlist.\n\nUse \`/watchlist view\` to see your current list.`);
+    }
+
+    // Remove from watchlist
+    const result = await watchlistManager.removeAnime(userId, animeInList.anime_id);
+    
+    if (!result.success) {
+        return await interaction.editReply('❌ Failed to remove anime from your watchlist. Please try again.');
+    }
+
+    await interaction.editReply(`✅ **${animeInList.anime_title}** has been removed from your watchlist.`);
+}
+
+async function handleWatchlistUpdate(interaction) {
+    const userId = interaction.user.id;
+    const animeName = interaction.options.getString('anime');
+    const newStatus = interaction.options.getString('status');
+    const episodes = interaction.options.getInteger('episodes');
+    const score = interaction.options.getInteger('score');
+
+    // Get user's watchlist to find the anime
+    const watchlistResult = await watchlistManager.getWatchlist(userId);
+    if (!watchlistResult.success) {
+        return await interaction.editReply('❌ Failed to access your watchlist. Please try again.');
+    }
+
+    // Find anime in watchlist
+    const animeInList = watchlistResult.watchlist.find(item => 
+        item.anime_title.toLowerCase().includes(animeName.toLowerCase())
+    );
+
+    if (!animeInList) {
+        return await interaction.editReply(`❌ **${animeName}** not found in your watchlist.\n\nUse \`/watchlist add\` to add it first.`);
+    }
+
+    // Update the entry
+    const result = await watchlistManager.updateStatus(userId, animeInList.anime_id, newStatus, episodes, score);
+    
+    if (!result.success) {
+        return await interaction.editReply('❌ Failed to update your watchlist entry. Please try again.');
+    }
+
+    const statusEmoji = watchlistManager.statusEmojis[newStatus] || '📋';
+    const embed = new EmbedBuilder()
+        .setTitle('✅ Watchlist Updated!')
+        .setDescription(`**${animeInList.anime_title}** has been updated.`)
+        .setColor('#74B9FF')
+        .setThumbnail(animeInList.anime_cover_image)
+        .setTimestamp();
+
+    const fields = [];
+    if (newStatus) {
+        fields.push({ name: 'Status', value: `${statusEmoji} ${newStatus.replace('_', ' ')}`, inline: true });
+    }
+    if (episodes !== null) {
+        const total = animeInList.total_episodes > 0 ? `/${animeInList.total_episodes}` : '';
+        fields.push({ name: 'Episodes Watched', value: `${episodes}${total}`, inline: true });
+    }
+    if (score !== null) {
+        fields.push({ name: 'Score', value: `⭐ ${score}/10`, inline: true });
+    }
+
+    embed.addFields(fields);
+    await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleWatchlistStats(interaction) {
+    const userId = interaction.user.id;
+
+    const result = await watchlistManager.getStats(userId);
+    
+    if (!result.success) {
+        return await interaction.editReply('❌ Failed to retrieve your statistics. Please try again.');
+    }
+
+    const embed = watchlistManager.generateStatsEmbed(result.stats);
+    await interaction.editReply({ embeds: [embed] });
 }
 
 async function handleRandom(interaction) {
@@ -3490,6 +3764,90 @@ app.get('/', (req, res) => {
     </html>
     `);
 });
+
+// Handle interactions (buttons, selects, etc.)
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton() && !interaction.isStringSelectMenu()) return;
+
+    try {
+        if (interaction.customId.startsWith('watchlist_')) {
+            await handleWatchlistInteraction(interaction);
+        }
+    } catch (error) {
+        logger.error('Interaction error:', error);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ 
+                content: '❌ An error occurred while processing your request.',
+                ephemeral: true 
+            });
+        }
+    }
+});
+
+async function handleWatchlistInteraction(interaction) {
+    const [action, param] = interaction.customId.split('_').slice(1); // Remove 'watchlist_' prefix
+    const userId = interaction.user.id;
+
+    if (!interaction.deferred) {
+        await interaction.deferUpdate();
+    }
+
+    switch (action) {
+        case 'filter':
+            await handleWatchlistFilter(interaction, param);
+            break;
+        case 'status':
+            await handleWatchlistStatusUpdate(interaction, param);
+            break;
+        default:
+            logger.warn(`Unknown watchlist interaction: ${interaction.customId}`);
+    }
+}
+
+async function handleWatchlistFilter(interaction, status) {
+    const userId = interaction.user.id;
+    const filterStatus = status === 'all' ? null : status;
+
+    const result = await watchlistManager.getWatchlist(userId, filterStatus);
+    
+    if (!result.success) {
+        return await interaction.editReply({
+            content: '❌ Failed to retrieve your watchlist. Please try again.',
+            embeds: [],
+            components: []
+        });
+    }
+
+    if (result.watchlist.length === 0) {
+        const message = filterStatus 
+            ? `📚 No anime found with status: **${filterStatus.replace('_', ' ')}**\n\nUse \`/watchlist add\` to add anime to your list!`
+            : '📚 Your watchlist is empty!\n\nUse `/watchlist add <anime name>` to start building your list!';
+        
+        return await interaction.editReply({
+            content: message,
+            embeds: [],
+            components: []
+        });
+    }
+
+    const embed = watchlistManager.generateWatchlistEmbed(result.watchlist, filterStatus);
+    const buttons = watchlistManager.generateWatchlistButtons(filterStatus);
+
+    await interaction.editReply({
+        content: '',
+        embeds: [embed],
+        components: buttons
+    });
+}
+
+async function handleWatchlistStatusUpdate(interaction, animeId) {
+    // This would handle individual anime status updates from buttons
+    // For now, users can use the /watchlist update command
+    await interaction.followUp({
+        content: '💡 Use `/watchlist update` command to change anime status and progress!',
+        ephemeral: true
+    });
+}
 
 // Enhanced error handling for process events
 process.on('unhandledRejection', (error) => {
