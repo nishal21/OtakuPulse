@@ -51,9 +51,9 @@ class SecurityManager {
                 console.log('🔍 CORS origin check:', origin);
                 console.log('🔍 Trusted origins:', this.trustedOrigins);
                 
-                // Allow requests with no origin (like mobile apps or curl requests)
-                if (!origin) {
-                    console.log('✅ CORS: Allowing request with no origin');
+                // Allow requests with no origin (undefined, null, or empty)
+                if (!origin || origin === 'null') {
+                    console.log('✅ CORS: Allowing request with no/null origin');
                     return callback(null, true);
                 }
                 
