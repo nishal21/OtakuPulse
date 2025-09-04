@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Routes, PermissionFlagsBits } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, SlashCommandBuilder, REST, Routes, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const express = require('express');
 const axios = require('axios');
 const cron = require('node-cron');
@@ -3785,19 +3785,36 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 async function handleWatchlistInteraction(interaction) {
-    const [action, param] = interaction.customId.split('_').slice(1); // Remove 'watchlist_' prefix
+    const actionId = interaction.customId.replace('watchlist_', ''); // Remove 'watchlist_' prefix
     const userId = interaction.user.id;
 
     if (!interaction.deferred) {
         await interaction.deferUpdate();
     }
 
-    switch (action) {
-        case 'filter':
-            await handleWatchlistFilter(interaction, param);
+    switch (actionId) {
+        case 'all':
+            await handleWatchlistFilter(interaction, null);
             break;
-        case 'status':
-            await handleWatchlistStatusUpdate(interaction, param);
+        case 'watching':
+            await handleWatchlistFilter(interaction, 'watching');
+            break;
+        case 'completed':
+            await handleWatchlistFilter(interaction, 'completed');
+            break;
+        case 'ptw':
+            await handleWatchlistFilter(interaction, 'plan_to_watch');
+            break;
+        case 'stats':
+            await handleWatchlistStatsButton(interaction);
+            break;
+        case 'prev':
+            // Handle pagination - for now just refresh
+            await handleWatchlistFilter(interaction, null);
+            break;
+        case 'next':
+            // Handle pagination - for now just refresh
+            await handleWatchlistFilter(interaction, null);
             break;
         default:
             logger.warn(`Unknown watchlist interaction: ${interaction.customId}`);
@@ -3837,6 +3854,38 @@ async function handleWatchlistFilter(interaction, status) {
         content: '',
         embeds: [embed],
         components: buttons
+    });
+}
+
+async function handleWatchlistStatsButton(interaction) {
+    const userId = interaction.user.id;
+
+    const result = await watchlistManager.getStats(userId);
+    
+    if (!result.success) {
+        return await interaction.editReply({
+            content: '❌ Failed to retrieve your statistics. Please try again.',
+            embeds: [],
+            components: []
+        });
+    }
+
+    const embed = watchlistManager.generateStatsEmbed(result.stats);
+    
+    // Add a back button to return to watchlist
+    const backButton = new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId('watchlist_all')
+                .setLabel('Back to Watchlist')
+                .setEmoji('⬅️')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+    await interaction.editReply({
+        content: '',
+        embeds: [embed],
+        components: [backButton]
     });
 }
 
