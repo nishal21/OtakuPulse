@@ -3,56 +3,95 @@ const { Pool } = require('@neondatabase/serverless');
 const { WebSocket } = require('ws');
 global.WebSocket = WebSocket;
 
+// Validate DATABASE_URL
+if (!process.env.DATABASE_URL || process.env.DATABASE_URL === 'postgresql://username:password@hostname/database?sslmode=require') {
+    console.error('❌ DATABASE_URL is not configured properly!');
+    console.error('Please set your actual Neon database connection string in the .env file');
+    console.error('Example: DATABASE_URL=postgresql://user:pass@ep-example.us-east-1.aws.neon.tech/neondb?sslmode=require');
+    process.exit(1);
+}
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL // Neon Postgres connection string
 });
 
+// Test database connection
+async function testDatabaseConnection() {
+    try {
+        console.log('🔌 Testing database connection...');
+        const client = await pool.connect();
+        const result = await client.query('SELECT NOW()');
+        client.release();
+        console.log('✅ Database connected successfully at:', result.rows[0].now);
+        return true;
+    } catch (error) {
+        console.error('❌ Database connection failed:', error.message);
+        console.error('Check your DATABASE_URL in .env file');
+        return false;
+    }
+}
+
 // Create table if not exists (run once at startup)
 async function ensureGuildSettingsTable() {
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS guild_settings (
-            guild_id VARCHAR(32) PRIMARY KEY,
-            notification_channel VARCHAR(32),
-            daily_quotes_channel VARCHAR(32),
-            airing_alerts_channel VARCHAR(32),
-            trailer_notifications_channel VARCHAR(32),
-            top_anime_rankings_channel VARCHAR(32),
-            anime_search_channel VARCHAR(32),
-            manga_updates_channel VARCHAR(32),
-            daily_quotes BOOLEAN,
-            airing_alerts BOOLEAN,
-            trailer_notifications BOOLEAN,
-            top_anime_rankings BOOLEAN,
-            anime_search BOOLEAN,
-            manga_updates BOOLEAN
-        );
-    `);
-    
-    // Create manga updates tracking table
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS manga_updates (
-            id SERIAL PRIMARY KEY,
-            manga_id VARCHAR(100),
-            chapter_id VARCHAR(100),
-            title VARCHAR(500),
-            chapter_title VARCHAR(500),
-            chapter_number VARCHAR(50),
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(manga_id, chapter_id)
-        );
-    `);
-    
-    // Create trailer notifications tracking table
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS trailer_notifications (
-            id SERIAL PRIMARY KEY,
-            anime_id VARCHAR(100),
-            trailer_id VARCHAR(100),
-            title VARCHAR(500),
-            notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(anime_id, trailer_id)
-        );
-    `);
+    try {
+        // First test the connection
+        const isConnected = await testDatabaseConnection();
+        if (!isConnected) {
+            throw new Error('Database connection test failed');
+        }
+
+        console.log('📋 Creating database tables...');
+        
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id VARCHAR(32) PRIMARY KEY,
+                notification_channel VARCHAR(32),
+                daily_quotes_channel VARCHAR(32),
+                airing_alerts_channel VARCHAR(32),
+                trailer_notifications_channel VARCHAR(32),
+                top_anime_rankings_channel VARCHAR(32),
+                anime_search_channel VARCHAR(32),
+                manga_updates_channel VARCHAR(32),
+                daily_quotes BOOLEAN,
+                airing_alerts BOOLEAN,
+                trailer_notifications BOOLEAN,
+                top_anime_rankings BOOLEAN,
+                anime_search BOOLEAN,
+                manga_updates BOOLEAN
+            );
+        `);
+        
+        // Create manga updates tracking table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS manga_updates (
+                id SERIAL PRIMARY KEY,
+                manga_id VARCHAR(100),
+                chapter_id VARCHAR(100),
+                title VARCHAR(500),
+                chapter_title VARCHAR(500),
+                chapter_number VARCHAR(50),
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(manga_id, chapter_id)
+            );
+        `);
+        
+        // Create trailer notifications tracking table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS trailer_notifications (
+                id SERIAL PRIMARY KEY,
+                anime_id VARCHAR(100),
+                trailer_id VARCHAR(100),
+                title VARCHAR(500),
+                notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(anime_id, trailer_id)
+            );
+        `);
+        
+        console.log('✅ Database tables created successfully');
+    } catch (error) {
+        console.error('❌ Failed to create database tables:', error.message);
+        throw error;
+    }
 }
 
 // Get settings for a guild
@@ -140,6 +179,7 @@ async function recordTrailerNotification(animeId, trailerId, title) {
 
 module.exports = {
     pool,
+    testDatabaseConnection,
     ensureGuildSettingsTable,
     getGuildSettings,
     setGuildSettings,
