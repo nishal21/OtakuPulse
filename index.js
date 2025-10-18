@@ -668,17 +668,29 @@ const commands = baseCommands; // Temporarily use only base commands to fix dupl
 client.once('ready', async () => {
     logger.info(`🤖 ${client.user.tag} is online with enhanced features!`);
     
-    // Register slash commands
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    
+    // Register slash commands with timeout handling
     try {
         logger.info('Started refreshing application (/) commands.');
-        await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
+        const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+        
+        // Set a timeout for command registration
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Command registration timed out')), 30000); // 30 second timeout
+        });
+        
+        const registerPromise = rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
             body: commands
         });
+        
+        await Promise.race([registerPromise, timeoutPromise]);
         logger.info(`Successfully reloaded ${commands.length} application (/) commands.`);
     } catch (error) {
-        logger.error('Error registering commands', error);
+        if (error.message.includes('timed out')) {
+            logger.warn('⚠️ Command registration timed out. Commands may not be available immediately.');
+            logger.warn('This is normal in serverless environments. Commands will register when the bot restarts.');
+        } else {
+            logger.error('Error registering commands', error);
+        }
     }
     
     // Start scheduled tasks
