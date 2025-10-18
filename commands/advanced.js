@@ -180,90 +180,10 @@ class AdvancedCommands {
                         .setRequired(false)
                 ),
 
-            // Watchlist management
-            new SlashCommandBuilder()
-                .setName('watchlist')
-                .setDescription('Manage your anime watchlist')
-                .addSubcommand(subcommand =>
-                    subcommand
-                        .setName('add')
-                        .setDescription('Add anime to watchlist')
-                        .addStringOption(option =>
-                            option.setName('anime')
-                                .setDescription('Anime name')
-                                .setRequired(true)
-                        )
-                )
-                .addSubcommand(subcommand =>
-                    subcommand
-                        .setName('remove')
-                        .setDescription('Remove anime from watchlist')
-                        .addStringOption(option =>
-                            option.setName('anime')
-                                .setDescription('Anime name')
-                                .setRequired(true)
-                        )
-                )
-                .addSubcommand(subcommand =>
-                    subcommand
-                        .setName('view')
-                        .setDescription('View your watchlist')
-                ),
-
-            // Random anime generator
-            new SlashCommandBuilder()
-                .setName('random')
-                .setDescription('Get a random anime recommendation')
-                .addStringOption(option =>
-                    option.setName('genre')
-                        .setDescription('Filter by genre')
-                        .setRequired(false)
-                )
-                .addStringOption(option =>
-                    option.setName('format')
-                        .setDescription('Anime format')
-                        .setRequired(false)
-                        .addChoices(
-                            { name: 'TV', value: 'TV' },
-                            { name: 'Movie', value: 'MOVIE' },
-                            { name: 'OVA', value: 'OVA' },
-                            { name: 'Special', value: 'SPECIAL' }
-                        )
-                ),
-
-            // Schedule command
-            new SlashCommandBuilder()
-                .setName('schedule')
-                .setDescription('View anime airing schedule')
-                .addStringOption(option =>
-                    option.setName('day')
-                        .setDescription('Day of the week')
-                        .setRequired(false)
-                        .addChoices(
-                            { name: 'Monday', value: 'monday' },
-                            { name: 'Tuesday', value: 'tuesday' },
-                            { name: 'Wednesday', value: 'wednesday' },
-                            { name: 'Thursday', value: 'thursday' },
-                            { name: 'Friday', value: 'friday' },
-                            { name: 'Saturday', value: 'saturday' },
-                            { name: 'Sunday', value: 'sunday' }
-                        )
-                ),
-
-            // Compare anime
-            new SlashCommandBuilder()
-                .setName('compare')
-                .setDescription('Compare two anime series')
-                .addStringOption(option =>
-                    option.setName('anime1')
-                        .setDescription('First anime')
-                        .setRequired(true)
-                )
-                .addStringOption(option =>
-                    option.setName('anime2')
-                        .setDescription('Second anime')
-                        .setRequired(true)
-                )
+            // Watchlist management (already defined in base commands - removed to avoid duplication)
+            // Random anime generator (already defined in base commands - removed to avoid duplication)
+            // Schedule command (already defined in base commands - removed to avoid duplication)
+            // Compare anime (already defined in base commands - removed to avoid duplication)
         ];
     }
 
