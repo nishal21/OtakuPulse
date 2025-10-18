@@ -13,7 +13,7 @@ class SecurityManager {
         
         // Add deployment URLs
         const deploymentOrigins = [
-            'https://otakupulse.onrender.com', // Render deployment
+            'https://otakupulse.vercel.app', // Vercel deployment
             process.env.FRONTEND_URL || 'http://localhost:3000'
         ];
         
