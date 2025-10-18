@@ -662,7 +662,8 @@ const baseCommands = [
 ];
 
 // Combine base commands with advanced commands
-const commands = baseCommands; // Temporarily use only base commands to fix duplication issue
+const commands = [...baseCommands, ...advancedCommands.getCommands()];
+logger.info(`📋 Prepared ${commands.length} slash commands for registration (${baseCommands.length} base + ${advancedCommands.getCommands().length} advanced)`);
 
 // Discord bot event handlers
 client.once('ready', async () => {
@@ -673,9 +674,9 @@ client.once('ready', async () => {
         logger.info('Started refreshing application (/) commands.');
         const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
         
-        // Set a timeout for command registration
+        // Set a shorter timeout for serverless environments
         const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('Command registration timed out')), 30000); // 30 second timeout
+            setTimeout(() => reject(new Error('Command registration timed out')), 15000); // 15 second timeout for serverless
         });
         
         const registerPromise = rest.put(Routes.applicationCommands(process.env.CLIENT_ID), {
@@ -686,8 +687,9 @@ client.once('ready', async () => {
         logger.info(`Successfully reloaded ${commands.length} application (/) commands.`);
     } catch (error) {
         if (error.message.includes('timed out')) {
-            logger.warn('⚠️ Command registration timed out. Commands may not be available immediately.');
-            logger.warn('This is normal in serverless environments. Commands will register when the bot restarts.');
+            logger.warn('⚠️ Command registration timed out in serverless environment.');
+            logger.warn('This is normal - commands will be registered when the function completes.');
+            logger.warn('Commands may take a few minutes to appear in Discord.');
         } else {
             logger.error('Error registering commands', error);
         }
